@@ -13,6 +13,7 @@ export function AttendanceSheet({ classId }: Props) {
   const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
   const [noteTarget, setNoteTarget] = useState<{ studentId: number; lessonId: number } | null>(null)
   const [noteText, setNoteText] = useState('')
+  const [editingLessonId, setEditingLessonId] = useState<number | null>(null)
 
   const recordKey = (lessonId: number, studentId: number) => `${lessonId}-${studentId}`
 
@@ -125,9 +126,23 @@ export function AttendanceSheet({ classId }: Props) {
     return { total, present, absent, late, earlyLeave, rate }
   }
 
+  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+
   const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
+    const d = new Date(dateStr + 'T00:00:00')
     return `${d.getMonth() + 1}/${d.getDate()}`
+  }
+
+  const formatWeekday = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00')
+    return WEEKDAYS[d.getDay()]
+  }
+
+  const updateLessonDate = async (lessonId: number, newDate: string) => {
+    if (!newDate) return
+    await db.lessons.update(lessonId, { date: newDate })
+    setEditingLessonId(null)
+    load()
   }
 
   const exportCsv = () => {
@@ -247,17 +262,41 @@ export function AttendanceSheet({ classId }: Props) {
                 <th className="sticky left-10 bg-gray-50 z-10 border-b border-r border-gray-200 px-2 py-2 text-left min-w-[80px]">
                   氏名
                 </th>
-                {lessons.map(l => (
-                  <th key={l.id} className="border-b border-r border-gray-200 px-1 py-2 text-center min-w-[44px]">
-                    <div className="text-xs">{formatDate(l.date)}</div>
-                    <button
-                      onClick={() => deleteLesson(l.id!)}
-                      className="text-[10px] text-red-400 hover:text-red-600"
-                    >
-                      ×
-                    </button>
-                  </th>
-                ))}
+                {lessons.map(l => {
+                  const weekday = formatWeekday(l.date)
+                  const isWeekend = weekday === '土' || weekday === '日'
+                  return (
+                    <th key={l.id} className="border-b border-r border-gray-200 px-1 py-1 text-center min-w-[44px]">
+                      {editingLessonId === l.id ? (
+                        <input
+                          type="date"
+                          defaultValue={l.date}
+                          onBlur={e => updateLessonDate(l.id!, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') updateLessonDate(l.id!, (e.target as HTMLInputElement).value) }}
+                          className="text-xs w-28 border border-gray-300 rounded px-1"
+                          autoFocus
+                        />
+                      ) : (
+                        <div
+                          className="text-xs cursor-pointer"
+                          onClick={() => setEditingLessonId(l.id!)}
+                          title="クリックで日付修正"
+                        >
+                          <div>{formatDate(l.date)}</div>
+                          <div className={isWeekend ? 'text-red-500' : 'text-gray-500'}>
+                            {weekday}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => deleteLesson(l.id!)}
+                        className="text-[10px] text-red-400 hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    </th>
+                  )
+                })}
                 <th className="border-b border-r border-gray-200 px-1 py-2 text-center text-xs bg-green-50">出席</th>
                 <th className="border-b border-r border-gray-200 px-1 py-2 text-center text-xs bg-red-50">欠席</th>
                 <th className="border-b border-gray-200 px-1 py-2 text-center text-xs bg-blue-50">出席率</th>
