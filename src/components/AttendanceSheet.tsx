@@ -234,13 +234,13 @@ export function AttendanceSheet({ classId }: Props) {
         <button onClick={addLesson} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium">
           ＋ 授業日追加
         </button>
-        <button onClick={exportCsv} className="border border-gray-300 px-3 py-1.5 rounded text-sm">
+        <button onClick={exportCsv} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
           CSV出力
         </button>
-        <button onClick={exportJson} className="border border-gray-300 px-3 py-1.5 rounded text-sm">
+        <button onClick={exportJson} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
           バックアップ
         </button>
-        <button onClick={importJson} className="border border-gray-300 px-3 py-1.5 rounded text-sm">
+        <button onClick={importJson} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
           リストア
         </button>
       </div>
@@ -252,28 +252,28 @@ export function AttendanceSheet({ classId }: Props) {
       )}
 
       {students.length > 0 && (
-        <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white">
+        <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
           <table className="text-sm border-collapse w-max min-w-full">
             <thead>
-              <tr className="bg-gray-50">
-                <th className="sticky left-0 bg-gray-50 z-10 border-b border-r border-gray-200 px-2 py-2 text-left w-10">
+              <tr className="bg-gray-50 dark:bg-gray-700">
+                <th className="sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-2 text-left w-10">
                   No
                 </th>
-                <th className="sticky left-10 bg-gray-50 z-10 border-b border-r border-gray-200 px-2 py-2 text-left min-w-[80px]">
+                <th className="sticky left-10 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-2 text-left min-w-[80px]">
                   氏名
                 </th>
                 {lessons.map(l => {
                   const weekday = formatWeekday(l.date)
                   const isWeekend = weekday === '土' || weekday === '日'
                   return (
-                    <th key={l.id} className="border-b border-r border-gray-200 px-1 py-1 text-center min-w-[44px]">
+                    <th key={l.id} className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center min-w-[44px]">
                       {editingLessonId === l.id ? (
                         <input
                           type="date"
                           defaultValue={l.date}
                           onBlur={e => updateLessonDate(l.id!, e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') updateLessonDate(l.id!, (e.target as HTMLInputElement).value) }}
-                          className="text-xs w-28 border border-gray-300 rounded px-1"
+                          className="text-xs w-28 border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-gray-100 rounded px-1"
                           autoFocus
                         />
                       ) : (
@@ -283,7 +283,7 @@ export function AttendanceSheet({ classId }: Props) {
                           title="クリックで日付修正"
                         >
                           <div>{formatDate(l.date)}</div>
-                          <div className={isWeekend ? 'text-red-500' : 'text-gray-500'}>
+                          <div className={isWeekend ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}>
                             {weekday}
                           </div>
                         </div>
@@ -297,21 +297,21 @@ export function AttendanceSheet({ classId }: Props) {
                     </th>
                   )
                 })}
-                <th className="border-b border-r border-gray-200 px-1 py-2 text-center text-xs bg-green-50">出席</th>
-                <th className="border-b border-r border-gray-200 px-1 py-2 text-center text-xs bg-red-50">欠席</th>
-                <th className="border-b border-gray-200 px-1 py-2 text-center text-xs bg-blue-50">出席率</th>
+                <th className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-green-50 dark:bg-green-900/30">出席</th>
+                <th className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-red-50 dark:bg-red-900/30">欠席</th>
+                <th className="border-b border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/30">出席率</th>
               </tr>
             </thead>
             <tbody>
               {students.map(s => {
                 const stats = getStudentStats(s.id!)
                 return (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="sticky left-0 bg-white z-10 border-b border-r border-gray-200 px-2 py-1 text-gray-400 text-center">
+                  <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 text-gray-400 text-center">
                       {s.number}
                     </td>
-                    <td className="sticky left-10 bg-white z-10 border-b border-r border-gray-200 px-2 py-1 whitespace-nowrap">
-                      {s.name}
+                    <td className="sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 whitespace-nowrap">
+                      {s.name || <span className="text-gray-300 dark:text-gray-600 italic">未入力</span>}
                     </td>
                     {lessons.map(l => {
                       const key = recordKey(l.id!, s.id!)
@@ -320,7 +320,7 @@ export function AttendanceSheet({ classId }: Props) {
                       return (
                         <td
                           key={l.id}
-                          className={`border-b border-r border-gray-200 text-center cursor-pointer select-none ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
+                          className={`border-b border-r border-gray-200 dark:border-gray-600 text-center cursor-pointer select-none ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
                           style={{ minWidth: 44, minHeight: 36 }}
                           onPointerDown={() => handlePointerDown(s.id!, l.id!)}
                           onPointerUp={() => handlePointerUp(s.id!, l.id!)}
@@ -330,13 +330,13 @@ export function AttendanceSheet({ classId }: Props) {
                         </td>
                       )
                     })}
-                    <td className="border-b border-r border-gray-200 px-1 py-1 text-center text-xs bg-green-50 font-medium">
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-green-50 dark:bg-green-900/30 font-medium">
                       {stats.present}
                     </td>
-                    <td className="border-b border-r border-gray-200 px-1 py-1 text-center text-xs bg-red-50 font-medium">
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium">
                       {stats.absent}
                     </td>
-                    <td className="border-b border-gray-200 px-1 py-1 text-center text-xs bg-blue-50 font-medium">
+                    <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium">
                       {stats.rate}%
                     </td>
                   </tr>
@@ -350,16 +350,16 @@ export function AttendanceSheet({ classId }: Props) {
       {/* 備考入力モーダル */}
       {noteTarget && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setNoteTarget(null)}>
-          <div className="bg-white rounded-lg p-4 w-80 shadow-lg" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 w-80 shadow-lg" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold mb-2">備考</h3>
             <textarea
               value={noteText}
               onChange={e => setNoteText(e.target.value)}
-              className="w-full border border-gray-300 rounded p-2 text-sm h-24"
+              className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded p-2 text-sm h-24"
               autoFocus
             />
             <div className="flex justify-end gap-2 mt-2">
-              <button onClick={() => setNoteTarget(null)} className="text-gray-500 text-sm px-3 py-1">取消</button>
+              <button onClick={() => setNoteTarget(null)} className="text-gray-500 dark:text-gray-400 text-sm px-3 py-1">取消</button>
               <button onClick={saveNote} className="bg-blue-600 text-white text-sm px-3 py-1 rounded">保存</button>
             </div>
           </div>
