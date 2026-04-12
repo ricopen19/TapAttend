@@ -61,6 +61,50 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
     load()
   }
 
+  const exportJson = () => {
+    db.transaction('r', db.classes, db.students, db.lessons, db.attendance, async () => {
+      const data = {
+        classes: await db.classes.toArray(),
+        students: await db.students.toArray(),
+        lessons: await db.lessons.toArray(),
+        attendance: await db.attendance.toArray(),
+        exportedAt: new Date().toISOString(),
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tapattend_backup_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+  }
+
+  const importJson = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      if (!confirm('現在のデータをすべて上書きしますか？')) return
+      const text = await file.text()
+      const data = JSON.parse(text)
+      await db.transaction('rw', db.classes, db.students, db.lessons, db.attendance, async () => {
+        await db.classes.clear()
+        await db.students.clear()
+        await db.lessons.clear()
+        await db.attendance.clear()
+        if (data.classes) await db.classes.bulkAdd(data.classes)
+        if (data.students) await db.students.bulkAdd(data.students)
+        if (data.lessons) await db.lessons.bulkAdd(data.lessons)
+        if (data.attendance) await db.attendance.bulkAdd(data.attendance)
+      })
+      load()
+    }
+    input.click()
+  }
+
   const deleteClass = async (id: number) => {
     if (!confirm('このクラスを削除しますか？関連する出席データもすべて削除されます。')) return
     const lessonIds = (await db.lessons.where('classId').equals(id).toArray()).map(l => l.id!)
@@ -156,6 +200,15 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
           </li>
         ))}
       </ul>
+
+      <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+        <button onClick={exportJson} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
+          バックアップ
+        </button>
+        <button onClick={importJson} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
+          リストア
+        </button>
+      </div>
     </div>
   )
 }
