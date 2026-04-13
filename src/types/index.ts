@@ -40,9 +40,9 @@ export interface AttendanceRecord {
 // ステータスの表示定義
 export const STATUS_CONFIG: Record<AttendanceStatus, { label: string; symbol: string; color: string }> = {
   present:    { label: '出席', symbol: '○', color: 'bg-green-100 text-green-800' },
-  absent:     { label: '欠席', symbol: '×', color: 'bg-red-100 text-red-800' },
-  late:       { label: '遅刻', symbol: '△', color: 'bg-yellow-100 text-yellow-800' },
-  earlyLeave: { label: '早退', symbol: '▽', color: 'bg-orange-100 text-orange-800' },
+  absent:     { label: '欠席', symbol: '／', color: 'bg-red-100 text-red-800' },
+  late:       { label: '遅刻', symbol: '遅', color: 'bg-yellow-100 text-yellow-800' },
+  earlyLeave: { label: '早退', symbol: '早', color: 'bg-orange-100 text-orange-800' },
   official:   { label: '公欠', symbol: '公', color: 'bg-blue-100 text-blue-800' },
   mourning:   { label: '忌引', symbol: '忌', color: 'bg-purple-100 text-purple-800' },
   suspension: { label: '出停', symbol: '停', color: 'bg-gray-200 text-gray-800' },
