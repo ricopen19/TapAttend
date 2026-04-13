@@ -19,6 +19,7 @@ export interface Student {
   classId: number
   number: number // 出席番号
   name: string
+  memo?: string
 }
 
 export interface Lesson {

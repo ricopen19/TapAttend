@@ -9,6 +9,7 @@ interface EditableStudent {
   id: number
   number: string
   name: string
+  memo: string
 }
 
 function toInitials(input: string): string {
@@ -23,10 +24,11 @@ export function StudentManager({ classId }: Props) {
   const [newName, setNewName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [initialMode, setInitialMode] = useState(false)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const load = async () => {
     const all = await db.students.where('classId').equals(classId).sortBy('number')
-    setStudents(all.map(s => ({ id: s.id!, number: String(s.number), name: s.name })))
+    setStudents(all.map(s => ({ id: s.id!, number: String(s.number), name: s.name, memo: s.memo ?? '' })))
     setDirty(false)
   }
 
@@ -41,7 +43,7 @@ export function StudentManager({ classId }: Props) {
     for (const s of students) {
       const num = parseInt(s.number)
       if (isNaN(num)) continue
-      await db.students.update(s.id, { number: num, name: s.name })
+      await db.students.update(s.id, { number: num, name: s.name, memo: s.memo })
     }
     setDirty(false)
   }
@@ -53,6 +55,10 @@ export function StudentManager({ classId }: Props) {
     setNewName('')
     setNewNumber('')
     load()
+  }
+
+  const saveMemo = async (id: number, memo: string) => {
+    await db.students.update(id, { memo })
   }
 
   const deleteStudent = async (id: number) => {
@@ -152,23 +158,50 @@ export function StudentManager({ classId }: Props) {
         {students.map(s => (
           <li
             key={s.id}
-            className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 px-3 py-1.5 flex items-center gap-2 text-sm"
+            className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
           >
-            <input
-              type="number"
-              value={s.number}
-              onChange={e => updateField(s.id, 'number', e.target.value)}
-              className="w-14 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-1 py-1 text-sm text-center"
-            />
-            <input
-              type="text"
-              value={s.name}
-              onChange={e => updateField(s.id, 'name', e.target.value)}
-              onBlur={() => { if (initialMode && s.name) updateField(s.id, 'name', toInitials(s.name)) }}
-              placeholder="氏名を入力"
-              className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
-            />
-            <button onClick={() => deleteStudent(s.id)} className="text-red-400 text-xs">削除</button>
+            <div className="px-3 py-1.5 flex items-center gap-2 text-sm">
+              <input
+                type="number"
+                value={s.number}
+                onChange={e => updateField(s.id, 'number', e.target.value)}
+                className="w-14 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-1 py-1 text-sm text-center"
+              />
+              <input
+                type="text"
+                value={s.name}
+                onChange={e => updateField(s.id, 'name', e.target.value)}
+                onBlur={() => { if (initialMode && s.name) updateField(s.id, 'name', toInitials(s.name)) }}
+                placeholder="氏名を入力"
+                className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
+              />
+              <button
+                onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                className={`text-xs px-1.5 py-0.5 rounded ${
+                  s.memo
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}
+                title="メモ"
+              >
+                {expandedId === s.id ? '▲' : '▼'}
+              </button>
+              <button onClick={() => deleteStudent(s.id)} className="text-red-400 text-xs">削除</button>
+            </div>
+            {expandedId === s.id && (
+              <div className="px-3 pb-2">
+                <textarea
+                  value={s.memo}
+                  onChange={e => {
+                    setStudents(prev => prev.map(st => st.id === s.id ? { ...st, memo: e.target.value } : st))
+                  }}
+                  onBlur={() => saveMemo(s.id, s.memo)}
+                  placeholder="メモ（特徴・出来事など）"
+                  rows={3}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1.5 text-sm resize-y"
+                />
+              </div>
+            )}
           </li>
         ))}
       </ul>

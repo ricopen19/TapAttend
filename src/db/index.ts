@@ -15,4 +15,11 @@ db.version(1).stores({
   attendance: '++id, lessonId, studentId, [lessonId+studentId]',
 })
 
+db.version(2).stores({
+  classes: '++id, sortOrder',
+  students: '++id, classId, number',
+  lessons: '++id, classId, date, sortOrder',
+  attendance: '++id, lessonId, studentId, [lessonId+studentId]',
+})
+
 export { db }
