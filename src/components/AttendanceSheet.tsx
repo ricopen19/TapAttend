@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { db } from '../db'
 import type { Student, Lesson, AttendanceRecord, AttendanceStatus } from '../types'
 import { STATUS_CONFIG, STATUS_CYCLE, EXCLUDED_FROM_TOTAL } from '../types'
@@ -14,6 +14,13 @@ export function AttendanceSheet({ classId }: Props) {
   const [noteTarget, setNoteTarget] = useState<{ studentId: number; lessonId: number } | null>(null)
   const [noteText, setNoteText] = useState('')
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null)
+  const [isLocked, setIsLocked] = useState(false)
+  const [statusTarget, setStatusTarget] = useState<{
+    studentId: number
+    lessonId: number
+    x: number
+    y: number
+  } | null>(null)
 
   const recordKey = (lessonId: number, studentId: number) => `${lessonId}-${studentId}`
 
@@ -22,6 +29,7 @@ export function AttendanceSheet({ classId }: Props) {
       db.students.where('classId').equals(classId).sortBy('number'),
       db.lessons.where('classId').equals(classId).sortBy('sortOrder'),
     ])
+    less.sort((a, b) => a.date.localeCompare(b.date))
     setStudents(studs)
     setLessons(less)
 
@@ -45,8 +53,6 @@ export function AttendanceSheet({ classId }: Props) {
       date: today,
       sortOrder: lessons.length,
     })
-
-    // 全生徒を「出席」で初期化
     const newRecords: Omit<AttendanceRecord, 'id'>[] = students.map(s => ({
       lessonId: lessonId as number,
       studentId: s.id!,
@@ -64,20 +70,17 @@ export function AttendanceSheet({ classId }: Props) {
     load()
   }
 
-  const cycleStatus = async (lessonId: number, studentId: number) => {
+  const setStatus = async (lessonId: number, studentId: number, status: AttendanceStatus) => {
     const key = recordKey(lessonId, studentId)
     const existing = records.get(key)
     if (!existing) return
-
-    const currentIndex = STATUS_CYCLE.indexOf(existing.status)
-    const nextStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length]
-    await db.attendance.update(existing.id!, { status: nextStatus })
-
+    await db.attendance.update(existing.id!, { status })
     setRecords(prev => {
       const next = new Map(prev)
-      next.set(key, { ...existing, status: nextStatus })
+      next.set(key, { ...existing, status })
       return next
     })
+    setStatusTarget(null)
   }
 
   const openNote = (studentId: number, lessonId: number) => {
@@ -102,28 +105,24 @@ export function AttendanceSheet({ classId }: Props) {
     setNoteTarget(null)
   }
 
-  // 集計
   const getStudentStats = (studentId: number) => {
-    let total = 0
-    let present = 0
-    let absent = 0
-    let late = 0
-    let earlyLeave = 0
-
+    let total = 0, present = 0, absent = 0, late = 0, earlyLeave = 0, other = 0
     for (const lesson of lessons) {
       const key = recordKey(lesson.id!, studentId)
       const rec = records.get(key)
       if (!rec) continue
-      if (EXCLUDED_FROM_TOTAL.includes(rec.status)) continue
+      if (EXCLUDED_FROM_TOTAL.includes(rec.status)) {
+        other++
+        continue
+      }
       total++
       if (rec.status === 'present') present++
       if (rec.status === 'absent') absent++
       if (rec.status === 'late') late++
       if (rec.status === 'earlyLeave') earlyLeave++
     }
-
     const rate = total > 0 ? Math.round((present / total) * 1000) / 10 : 0
-    return { total, present, absent, late, earlyLeave, rate }
+    return { total, present, absent, late, earlyLeave, other, rate }
   }
 
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
@@ -146,15 +145,15 @@ export function AttendanceSheet({ classId }: Props) {
   }
 
   const exportCsv = () => {
-    const BOM = '\uFEFF'
-    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠席', '遅刻', '早退', '出席率']
+    const BOM = '﻿'
+    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠席', '遅刻', '早退', '公欠等', '出席率']
     const rows = students.map(s => {
       const stats = getStudentStats(s.id!)
       const statuses = lessons.map(l => {
         const rec = records.get(recordKey(l.id!, s.id!))
         return rec ? STATUS_CONFIG[rec.status].symbol : ''
       })
-      return [s.number, s.name, ...statuses, stats.present, stats.absent, stats.late, stats.earlyLeave, `${stats.rate}%`]
+      return [s.number, s.name, ...statuses, stats.present, stats.absent, stats.late, stats.earlyLeave, stats.other, `${stats.rate}%`]
     })
     const csv = [header, ...rows].map(row => row.join(',')).join('\n')
     const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' })
@@ -169,29 +168,51 @@ export function AttendanceSheet({ classId }: Props) {
   let longPressTimer: ReturnType<typeof setTimeout> | null = null
 
   const handlePointerDown = (studentId: number, lessonId: number) => {
+    if (isLocked) return
     longPressTimer = setTimeout(() => {
       openNote(studentId, lessonId)
       longPressTimer = null
     }, 500)
   }
 
-  const handlePointerUp = (studentId: number, lessonId: number) => {
+  const handlePointerUp = (studentId: number, lessonId: number, e: React.PointerEvent<HTMLTableCellElement>) => {
+    if (isLocked) return
     if (longPressTimer) {
       clearTimeout(longPressTimer)
       longPressTimer = null
-      cycleStatus(lessonId, studentId)
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      setStatusTarget({
+        studentId,
+        lessonId,
+        x: Math.min(rect.left, window.innerWidth - 220),
+        y: rect.bottom + 4,
+      })
     }
   }
 
   return (
     <div className="p-2">
       {/* ツールバー */}
-      <div className="flex gap-2 mb-2 flex-wrap">
-        <button onClick={addLesson} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium">
+      <div className="flex gap-2 mb-2 flex-wrap items-center">
+        <button
+          onClick={addLesson}
+          disabled={isLocked}
+          className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+        >
           ＋ 授業日追加
         </button>
         <button onClick={exportCsv} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
           CSV出力
+        </button>
+        <button
+          onClick={() => setIsLocked(!isLocked)}
+          className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+            isLocked
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-300 dark:border-amber-600'
+              : 'border-gray-300 dark:border-gray-600 dark:text-gray-300'
+          }`}
+        >
+          {isLocked ? '閲覧専用' : '編集可'}
         </button>
       </div>
 
@@ -228,9 +249,9 @@ export function AttendanceSheet({ classId }: Props) {
                         />
                       ) : (
                         <div
-                          className="text-xs cursor-pointer"
-                          onClick={() => setEditingLessonId(l.id!)}
-                          title="クリックで日付修正"
+                          className={`text-xs ${isLocked ? '' : 'cursor-pointer'}`}
+                          onClick={() => { if (!isLocked) setEditingLessonId(l.id!) }}
+                          title={isLocked ? undefined : 'クリックで日付修正'}
                         >
                           <div>{formatDate(l.date)}</div>
                           <div className={isWeekend ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}>
@@ -238,17 +259,20 @@ export function AttendanceSheet({ classId }: Props) {
                           </div>
                         </div>
                       )}
-                      <button
-                        onClick={() => deleteLesson(l.id!)}
-                        className="text-[10px] text-red-400 hover:text-red-600"
-                      >
-                        ×
-                      </button>
+                      {!isLocked && (
+                        <button
+                          onClick={() => deleteLesson(l.id!)}
+                          className="text-[10px] text-red-400 hover:text-red-600"
+                        >
+                          ×
+                        </button>
+                      )}
                     </th>
                   )
                 })}
                 <th className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-green-50 dark:bg-green-900/30">出席</th>
                 <th className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-red-50 dark:bg-red-900/30">欠席</th>
+                <th className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-purple-50 dark:bg-purple-900/30">公欠等</th>
                 <th className="border-b border-gray-200 dark:border-gray-600 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/30">出席率</th>
               </tr>
             </thead>
@@ -270,10 +294,10 @@ export function AttendanceSheet({ classId }: Props) {
                       return (
                         <td
                           key={l.id}
-                          className={`border-b border-r border-gray-200 dark:border-gray-600 text-center cursor-pointer select-none ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
+                          className={`border-b border-r border-gray-200 dark:border-gray-600 text-center select-none ${isLocked ? '' : 'cursor-pointer'} ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
                           style={{ minWidth: 44, minHeight: 36 }}
                           onPointerDown={() => handlePointerDown(s.id!, l.id!)}
-                          onPointerUp={() => handlePointerUp(s.id!, l.id!)}
+                          onPointerUp={e => handlePointerUp(s.id!, l.id!, e)}
                           onPointerCancel={() => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null } }}
                         >
                           <span className="text-base font-medium">{config?.symbol || ''}</span>
@@ -286,6 +310,9 @@ export function AttendanceSheet({ classId }: Props) {
                     <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium">
                       {stats.absent}
                     </td>
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium">
+                      {stats.other}
+                    </td>
                     <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium">
                       {stats.rate}%
                     </td>
@@ -295,6 +322,30 @@ export function AttendanceSheet({ classId }: Props) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ステータス選択ポップアップ */}
+      {statusTarget && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setStatusTarget(null)} />
+          <div
+            className="fixed z-50 bg-white dark:bg-gray-800 shadow-xl rounded-lg border border-gray-200 dark:border-gray-600 p-2"
+            style={{ top: statusTarget.y, left: statusTarget.x }}
+          >
+            <div className="grid grid-cols-4 gap-1">
+              {STATUS_CYCLE.map(status => (
+                <button
+                  key={status}
+                  onClick={() => setStatus(statusTarget.lessonId, statusTarget.studentId, status)}
+                  className={`flex flex-col items-center px-2 py-1.5 rounded text-xs font-medium hover:opacity-80 ${STATUS_CONFIG[status].color}`}
+                >
+                  <span className="text-base leading-tight">{STATUS_CONFIG[status].symbol}</span>
+                  <span className="leading-tight">{STATUS_CONFIG[status].label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {/* 備考入力モーダル */}
