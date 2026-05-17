@@ -233,17 +233,17 @@ export function AttendanceSheet({ classId, isDark }: Props) {
           <table className="text-sm border-collapse w-max min-w-full">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-700">
-                <th className="sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-2 text-left w-10">
+                <th className="sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-300 dark:border-gray-500 px-2 py-2 text-left w-10">
                   No
                 </th>
-                <th className="sticky left-10 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-2 text-left min-w-[80px]">
+                <th className="sticky left-10 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-300 dark:border-gray-500 px-2 py-2 text-left min-w-[80px]">
                   氏名
                 </th>
                 {lessons.map(l => {
                   const weekday = formatWeekday(l.date)
                   const isWeekend = weekday === '土' || weekday === '日'
                   return (
-                    <th key={l.id} className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center min-w-[44px]">
+                    <th key={l.id} className="border-b border-r border-gray-100 dark:border-gray-700 px-1 py-1 text-center min-w-[44px]">
                       {editingLessonId === l.id ? (
                         <input
                           type="date"
@@ -286,19 +286,26 @@ export function AttendanceSheet({ classId, isDark }: Props) {
               {students.map(s => {
                 const stats = getStudentStats(s.id!)
                 const isGroupEnd = s.number % 5 === 0
-                const bottomStyle = isGroupEnd
-                  ? {
-                      borderBottomWidth: '4px',
-                      borderBottomStyle: 'double' as const,
-                      borderBottomColor: isDark ? '#9ca3af' : '#374151',
-                    }
+                // Zone A: No/氏名（sticky列）— やや濃い罫線、区切りは solid 2px
+                const zoneABorder = 'border-gray-300 dark:border-gray-500'
+                const zoneASep: React.CSSProperties = isGroupEnd
+                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#6b7280' : '#6b7280' }
+                  : {}
+                // Zone B: 出席入力列 — 薄い罫線でステータス色を際立たせ、区切りは double 4px
+                const zoneBBorder = 'border-gray-100 dark:border-gray-700'
+                const zoneBSep: React.CSSProperties = isGroupEnd
+                  ? { borderBottomWidth: '4px', borderBottomStyle: 'double', borderBottomColor: isDark ? '#9ca3af' : '#4b5563' }
+                  : {}
+                // Zone C: 統計列 — 中間の濃さ、区切りは solid 2px（背景色に馴染む）
+                const zoneCSep: React.CSSProperties = isGroupEnd
+                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#6b7280' : '#9ca3af' }
                   : {}
                 return (
                   <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 text-gray-400 text-center" style={bottomStyle}>
+                    <td className={`sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r ${zoneABorder} px-2 py-1 text-gray-400 text-center`} style={zoneASep}>
                       {s.number}
                     </td>
-                    <td className="sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 whitespace-nowrap" style={bottomStyle}>
+                    <td className={`sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r ${zoneABorder} px-2 py-1 whitespace-nowrap`} style={zoneASep}>
                       {s.name || <span className="text-gray-300 dark:text-gray-600 italic">未入力</span>}
                     </td>
                     {lessons.map(l => {
@@ -308,8 +315,8 @@ export function AttendanceSheet({ classId, isDark }: Props) {
                       return (
                         <td
                           key={l.id}
-                          className={`border-b border-r border-gray-200 dark:border-gray-600 text-center select-none ${isLocked ? '' : 'cursor-pointer'} ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
-                          style={{ minWidth: 44, minHeight: 36, ...bottomStyle }}
+                          className={`border-b border-r ${zoneBBorder} text-center select-none ${isLocked ? '' : 'cursor-pointer'} ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
+                          style={{ minWidth: 44, minHeight: 36, ...zoneBSep }}
                           onPointerDown={() => handlePointerDown(s.id!, l.id!)}
                           onPointerUp={e => handlePointerUp(s.id!, l.id!, e)}
                           onPointerCancel={() => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null } }}
@@ -318,16 +325,16 @@ export function AttendanceSheet({ classId, isDark }: Props) {
                         </td>
                       )
                     })}
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-green-50 dark:bg-green-900/30 font-medium" style={bottomStyle}>
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-green-50 dark:bg-green-900/30 font-medium" style={zoneCSep}>
                       {stats.present}
                     </td>
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium" style={bottomStyle}>
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium" style={zoneCSep}>
                       {stats.absent}
                     </td>
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium" style={bottomStyle}>
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium" style={zoneCSep}>
                       {stats.other}
                     </td>
-                    <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium" style={bottomStyle}>
+                    <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium" style={zoneCSep}>
                       {stats.rate}%
                     </td>
                   </tr>
