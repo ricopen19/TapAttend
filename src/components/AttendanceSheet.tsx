@@ -181,11 +181,16 @@ export function AttendanceSheet({ classId }: Props) {
       clearTimeout(longPressTimer)
       longPressTimer = null
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const POPUP_HEIGHT = 110
+      const yBelow = rect.bottom + 4
+      const y = yBelow + POPUP_HEIGHT > window.innerHeight
+        ? Math.max(4, rect.top - POPUP_HEIGHT - 4)
+        : yBelow
       setStatusTarget({
         studentId,
         lessonId,
         x: Math.min(rect.left, window.innerWidth - 220),
-        y: rect.bottom + 4,
+        y,
       })
     }
   }

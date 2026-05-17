@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { db } from '../db'
 
 interface Props {
@@ -156,8 +156,8 @@ export function StudentManager({ classId }: Props) {
 
       <ul className="space-y-1">
         {students.map(s => (
+          <React.Fragment key={s.id}>
           <li
-            key={s.id}
             className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
           >
             <div className="px-3 py-1.5 flex items-center gap-2 text-sm">
@@ -203,6 +203,10 @@ export function StudentManager({ classId }: Props) {
               </div>
             )}
           </li>
+          {parseInt(s.number) % 5 === 0 && (
+            <div className="h-0.5 bg-gray-400 dark:bg-gray-500 rounded" />
+          )}
+          </React.Fragment>
         ))}
       </ul>
 
