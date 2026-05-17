@@ -286,19 +286,19 @@ export function AttendanceSheet({ classId, isDark }: Props) {
               {students.map(s => {
                 const stats = getStudentStats(s.id!)
                 const isGroupEnd = s.number % 5 === 0
-                // Zone A: No/氏名（sticky列）— やや濃い罫線、区切りは solid 2px
+                // Zone A: No/氏名（sticky列）
                 const zoneABorder = 'border-gray-500 dark:border-gray-500'
                 const zoneASep: React.CSSProperties = isGroupEnd
-                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#6b7280' : '#374151' }
+                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#6b7280' : '#6b7280' }
                   : {}
-                // Zone B: 出席入力列 — 中程度の罫線、区切りは double 4px
+                // Zone B: 出席入力列
                 const zoneBBorder = 'border-gray-400 dark:border-gray-700'
                 const zoneBSep: React.CSSProperties = isGroupEnd
-                  ? { borderBottomWidth: '4px', borderBottomStyle: 'double', borderBottomColor: isDark ? '#9ca3af' : '#1f2937' }
+                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#374151' : '#9ca3af' }
                   : {}
-                // Zone C: 統計列 — 中間の濃さ、区切りは solid 2px（背景色に馴染む）
+                // Zone C: 統計列
                 const zoneCSep: React.CSSProperties = isGroupEnd
-                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#6b7280' : '#4b5563' }
+                  ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#4b5563' : '#9ca3af' }
                   : {}
                 return (
                   <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
