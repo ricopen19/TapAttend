@@ -284,12 +284,16 @@ export function AttendanceSheet({ classId }: Props) {
             <tbody>
               {students.map(s => {
                 const stats = getStudentStats(s.id!)
+                const isGroupEnd = s.number % 5 === 0
+                const bottomStyle = isGroupEnd
+                  ? { borderBottomWidth: '2px', borderBottomColor: 'rgb(156 163 175)' }
+                  : {}
                 return (
                   <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 text-gray-400 text-center">
+                    <td className="sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 text-gray-400 text-center" style={bottomStyle}>
                       {s.number}
                     </td>
-                    <td className="sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 whitespace-nowrap">
+                    <td className="sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r border-gray-200 dark:border-gray-600 px-2 py-1 whitespace-nowrap" style={bottomStyle}>
                       {s.name || <span className="text-gray-300 dark:text-gray-600 italic">未入力</span>}
                     </td>
                     {lessons.map(l => {
@@ -300,7 +304,7 @@ export function AttendanceSheet({ classId }: Props) {
                         <td
                           key={l.id}
                           className={`border-b border-r border-gray-200 dark:border-gray-600 text-center select-none ${isLocked ? '' : 'cursor-pointer'} ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
-                          style={{ minWidth: 44, minHeight: 36 }}
+                          style={{ minWidth: 44, minHeight: 36, ...bottomStyle }}
                           onPointerDown={() => handlePointerDown(s.id!, l.id!)}
                           onPointerUp={e => handlePointerUp(s.id!, l.id!, e)}
                           onPointerCancel={() => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null } }}
@@ -309,16 +313,16 @@ export function AttendanceSheet({ classId }: Props) {
                         </td>
                       )
                     })}
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-green-50 dark:bg-green-900/30 font-medium">
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-green-50 dark:bg-green-900/30 font-medium" style={bottomStyle}>
                       {stats.present}
                     </td>
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium">
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-red-50 dark:bg-red-900/30 font-medium" style={bottomStyle}>
                       {stats.absent}
                     </td>
-                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium">
+                    <td className="border-b border-r border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium" style={bottomStyle}>
                       {stats.other}
                     </td>
-                    <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium">
+                    <td className="border-b border-gray-200 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium" style={bottomStyle}>
                       {stats.rate}%
                     </td>
                   </tr>
