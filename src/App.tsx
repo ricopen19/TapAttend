@@ -50,7 +50,7 @@ function App() {
           />
         )}
         {screen.type === 'attendance' && (
-          <AttendanceSheet classId={screen.classId} />
+          <AttendanceSheet classId={screen.classId} isDark={isDark} />
         )}
         {screen.type === 'students' && (
           <StudentManager classId={screen.classId} />
