@@ -149,7 +149,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
 
   const exportCsv = () => {
     const BOM = '﻿'
-    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠席', '遅刻', '早退', '公欠等', '欠課時数', '出停忌引時数', '出席率']
+    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠課時数', '遅刻', '早退', '公欠等', '出停忌引時数', '出席率']
     const rows = students.map(s => {
       const stats = getStudentStats(s.id!)
       const statuses = lessons.map(l => {
@@ -158,7 +158,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
       })
       // 欠課時数 = 実欠席 + (遅刻+早退)を3回で1回換算した分
       const kaKaJisuu = stats.absent + Math.floor((stats.late + stats.earlyLeave) / 3)
-      return [s.number, s.name, ...statuses, stats.present, stats.absent, stats.late, stats.earlyLeave, stats.other, kaKaJisuu, stats.suspensionMourning, `${stats.rate}%`]
+      return [s.number, s.name, ...statuses, stats.present, kaKaJisuu, stats.late, stats.earlyLeave, stats.other, stats.suspensionMourning, `${stats.rate}%`]
     })
     const csv = [header, ...rows].map(row => row.join(',')).join('\n')
     const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' })
