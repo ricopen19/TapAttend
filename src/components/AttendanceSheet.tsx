@@ -16,7 +16,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   const [noteTarget, setNoteTarget] = useState<{ studentId: number; lessonId: number } | null>(null)
   const [noteText, setNoteText] = useState('')
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null)
-  const [isLocked, setIsLocked] = useState(false)
+  const [isLocked, setIsLocked] = useState(true)
   const [statusTarget, setStatusTarget] = useState<{
     studentId: number
     lessonId: number
