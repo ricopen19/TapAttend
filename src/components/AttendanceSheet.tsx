@@ -5,10 +5,11 @@ import { STATUS_CONFIG, STATUS_CYCLE, EXCLUDED_FROM_TOTAL } from '../types'
 
 interface Props {
   classId: number
+  classNameLabel: string
   isDark: boolean
 }
 
-export function AttendanceSheet({ classId, isDark }: Props) {
+export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   const [students, setStudents] = useState<Student[]>([])
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
@@ -161,7 +162,8 @@ export function AttendanceSheet({ classId, isDark }: Props) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `attendance_${new Date().toISOString().slice(0, 10)}.csv`
+    const safeClassName = classNameLabel.replace(/[/\\:*?"<>|]/g, '_')
+    a.download = `attendance_${safeClassName}_${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
