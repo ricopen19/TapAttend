@@ -108,13 +108,14 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   }
 
   const getStudentStats = (studentId: number) => {
-    let total = 0, present = 0, absent = 0, late = 0, earlyLeave = 0, other = 0
+    let total = 0, present = 0, absent = 0, late = 0, earlyLeave = 0, other = 0, suspensionMourning = 0
     for (const lesson of lessons) {
       const key = recordKey(lesson.id!, studentId)
       const rec = records.get(key)
       if (!rec) continue
       if (EXCLUDED_FROM_TOTAL.includes(rec.status)) {
         other++
+        if (rec.status === 'mourning' || rec.status === 'suspension') suspensionMourning++
         continue
       }
       total++
@@ -124,7 +125,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
       if (rec.status === 'earlyLeave') earlyLeave++
     }
     const rate = total > 0 ? Math.round((present / total) * 1000) / 10 : 0
-    return { total, present, absent, late, earlyLeave, other, rate }
+    return { total, present, absent, late, earlyLeave, other, suspensionMourning, rate }
   }
 
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
@@ -148,14 +149,16 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
 
   const exportCsv = () => {
     const BOM = '﻿'
-    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠席', '遅刻', '早退', '公欠等', '出席率']
+    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠席', '遅刻', '早退', '公欠等', '欠課時数', '出停忌引時数', '出席率']
     const rows = students.map(s => {
       const stats = getStudentStats(s.id!)
       const statuses = lessons.map(l => {
         const rec = records.get(recordKey(l.id!, s.id!))
         return rec ? STATUS_CONFIG[rec.status].symbol : ''
       })
-      return [s.number, s.name, ...statuses, stats.present, stats.absent, stats.late, stats.earlyLeave, stats.other, `${stats.rate}%`]
+      // 欠課時数 = 実欠席 + (遅刻+早退)を3回で1回換算した分
+      const kaKaJisuu = stats.absent + Math.floor((stats.late + stats.earlyLeave) / 3)
+      return [s.number, s.name, ...statuses, stats.present, stats.absent, stats.late, stats.earlyLeave, stats.other, kaKaJisuu, stats.suspensionMourning, `${stats.rate}%`]
     })
     const csv = [header, ...rows].map(row => row.join(',')).join('\n')
     const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' })
@@ -281,6 +284,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                 <th className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-2 text-center text-xs bg-green-50 dark:bg-green-900/30">出席</th>
                 <th className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-2 text-center text-xs bg-red-50 dark:bg-red-900/30">欠席</th>
                 <th className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-2 text-center text-xs bg-purple-50 dark:bg-purple-900/30">公欠等</th>
+                <th className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-2 text-center text-xs bg-indigo-50 dark:bg-indigo-900/30">出停忌引時数</th>
                 <th className="border-b border-gray-400 dark:border-gray-600 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/30">出席率</th>
               </tr>
             </thead>
@@ -335,6 +339,9 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                     </td>
                     <td className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/30 font-medium" style={zoneCSep}>
                       {stats.other}
+                    </td>
+                    <td className="border-b border-r border-gray-400 dark:border-gray-600 px-1 py-1 text-center text-xs bg-indigo-50 dark:bg-indigo-900/30 font-medium" style={zoneCSep}>
+                      {stats.suspensionMourning}
                     </td>
                     <td className="border-b border-gray-400 dark:border-gray-600 px-1 py-1 text-center text-xs bg-blue-50 dark:bg-blue-900/30 font-medium" style={zoneCSep}>
                       {stats.rate}%
