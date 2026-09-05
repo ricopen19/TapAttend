@@ -8,31 +8,34 @@ export type AttendanceStatus =
   | 'suspension' // 出停
 
 export interface SchoolClass {
-  id?: number
-  name: string
+  id: string // GAS上のシート名
+  gradeClass: string // 学年組（名簿マスタのシート名と一致）
+  subject: string // 教科名
   sortOrder: number
-  createdAt: Date
+  createdAt: string
 }
 
 export interface Student {
-  id?: number
-  classId: number
-  number: number // 出席番号
+  number: number // 出席番号（名簿マスタ由来、キー）
   name: string
-  memo?: string
+  memo: string
 }
 
-export interface Lesson {
-  id?: number
-  classId: number
-  date: string // YYYY-MM-DD
-  sortOrder: number
+export interface AttendanceCell {
+  status: AttendanceStatus
+  note: string
 }
 
-export interface AttendanceRecord {
-  id?: number
-  lessonId: number
-  studentId: number
+export interface AttendanceData {
+  class: SchoolClass
+  students: Student[]
+  dates: string[]
+  records: Record<string, Record<number, AttendanceCell>> // date -> 出席番号 -> cell
+}
+
+export interface AttendanceEdit {
+  number: number
+  date: string
   status: AttendanceStatus
   note: string
 }
