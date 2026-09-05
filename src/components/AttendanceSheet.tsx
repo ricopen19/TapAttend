@@ -1,117 +1,106 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { db } from '../db'
-import type { Student, Lesson, AttendanceRecord, AttendanceStatus } from '../types'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { api } from '../gas/api'
+import type { AttendanceData, AttendanceEdit, AttendanceStatus } from '../types'
 import { STATUS_CONFIG, STATUS_CYCLE, EXCLUDED_FROM_TOTAL } from '../types'
 
 interface Props {
-  classId: number
+  classId: string
   classNameLabel: string
   isDark: boolean
 }
 
+const FLUSH_DELAY_MS = 800
+
 export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
-  const [students, setStudents] = useState<Student[]>([])
-  const [lessons, setLessons] = useState<Lesson[]>([])
-  const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
-  const [noteTarget, setNoteTarget] = useState<{ studentId: number; lessonId: number } | null>(null)
+  const [data, setData] = useState<AttendanceData | null>(null)
+  const [noteTarget, setNoteTarget] = useState<{ number: number; date: string } | null>(null)
   const [noteText, setNoteText] = useState('')
-  const [editingLessonId, setEditingLessonId] = useState<number | null>(null)
+  const [editingDate, setEditingDate] = useState<string | null>(null)
   const [isLocked, setIsLocked] = useState(true)
   const [statusTarget, setStatusTarget] = useState<{
-    studentId: number
-    lessonId: number
+    number: number
+    date: string
     x: number
     y: number
   } | null>(null)
 
-  const recordKey = (lessonId: number, studentId: number) => `${lessonId}-${studentId}`
+  // ponytail: タップのたびに同期通信すると点呼が遅くなるため、ローカルへ即時反映しつつ
+  // 編集をため込んでデバウンスでまとめて送信する。number+date をキーに最新値だけ残す。
+  const pendingEdits = useRef<Map<string, AttendanceEdit>>(new Map())
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
-    const [studs, less] = await Promise.all([
-      db.students.where('classId').equals(classId).sortBy('number'),
-      db.lessons.where('classId').equals(classId).sortBy('sortOrder'),
-    ])
-    less.sort((a, b) => a.date.localeCompare(b.date))
-    setStudents(studs)
-    setLessons(less)
-
-    if (less.length > 0) {
-      const lessonIds = less.map(l => l.id!)
-      const allRecords = await db.attendance.where('lessonId').anyOf(lessonIds).toArray()
-      const map = new Map<string, AttendanceRecord>()
-      for (const r of allRecords) {
-        map.set(recordKey(r.lessonId, r.studentId), r)
-      }
-      setRecords(map)
-    }
+    setData(await api.getAttendanceData(classId))
   }, [classId])
 
   useEffect(() => { load() }, [load])
 
-  const addLesson = async () => {
-    const today = new Date().toISOString().slice(0, 10)
-    const lessonId = await db.lessons.add({
-      classId,
-      date: today,
-      sortOrder: lessons.length,
+  const flushEdits = useCallback(() => {
+    if (pendingEdits.current.size === 0) return
+    const edits = Array.from(pendingEdits.current.values())
+    pendingEdits.current.clear()
+    api.saveAttendanceEdits(classId, edits).catch(() => {
+      edits.forEach(edit => pendingEdits.current.set(`${edit.number}-${edit.date}`, edit))
+      alert('出欠の保存に失敗しました。もう一度お試しください。')
     })
-    const newRecords: Omit<AttendanceRecord, 'id'>[] = students.map(s => ({
-      lessonId: lessonId as number,
-      studentId: s.id!,
-      status: 'present' as AttendanceStatus,
-      note: '',
-    }))
-    await db.attendance.bulkAdd(newRecords as AttendanceRecord[])
-    load()
+  }, [classId])
+
+  useEffect(() => () => flushEdits(), [flushEdits])
+
+  const queueEdit = (edit: AttendanceEdit) => {
+    pendingEdits.current.set(`${edit.number}-${edit.date}`, edit)
+    if (flushTimer.current) clearTimeout(flushTimer.current)
+    flushTimer.current = setTimeout(flushEdits, FLUSH_DELAY_MS)
   }
 
-  const deleteLesson = async (lessonId: number) => {
+  const addLesson = async () => {
+    flushEdits()
+    setData(await api.addLesson(classId))
+  }
+
+  const deleteLesson = async (date: string) => {
     if (!confirm('この授業日を削除しますか？')) return
-    await db.attendance.where('lessonId').equals(lessonId).delete()
-    await db.lessons.delete(lessonId)
-    load()
+    flushEdits()
+    setData(await api.deleteLesson(classId, date))
   }
 
-  const setStatus = async (lessonId: number, studentId: number, status: AttendanceStatus) => {
-    const key = recordKey(lessonId, studentId)
-    const existing = records.get(key)
-    if (!existing) return
-    await db.attendance.update(existing.id!, { status })
-    setRecords(prev => {
-      const next = new Map(prev)
-      next.set(key, { ...existing, status })
+  const setStatus = (date: string, number: number, status: AttendanceStatus) => {
+    if (!data) return
+    const existingNote = data.records[date]?.[number]?.note || ''
+    setData(prev => {
+      if (!prev) return prev
+      const next = { ...prev, records: { ...prev.records } }
+      next.records[date] = { ...next.records[date], [number]: { status, note: existingNote } }
       return next
     })
+    queueEdit({ number, date, status, note: existingNote })
     setStatusTarget(null)
   }
 
-  const openNote = (studentId: number, lessonId: number) => {
-    const key = recordKey(lessonId, studentId)
-    const existing = records.get(key)
-    setNoteText(existing?.note || '')
-    setNoteTarget({ studentId, lessonId })
+  const openNote = (number: number, date: string) => {
+    setNoteText(data?.records[date]?.[number]?.note || '')
+    setNoteTarget({ number, date })
   }
 
-  const saveNote = async () => {
-    if (!noteTarget) return
-    const key = recordKey(noteTarget.lessonId, noteTarget.studentId)
-    const existing = records.get(key)
-    if (existing) {
-      await db.attendance.update(existing.id!, { note: noteText })
-      setRecords(prev => {
-        const next = new Map(prev)
-        next.set(key, { ...existing, note: noteText })
-        return next
-      })
-    }
+  const saveNote = () => {
+    if (!noteTarget || !data) return
+    const { number, date } = noteTarget
+    const existingStatus = data.records[date]?.[number]?.status || 'present'
+    setData(prev => {
+      if (!prev) return prev
+      const next = { ...prev, records: { ...prev.records } }
+      next.records[date] = { ...next.records[date], [number]: { status: existingStatus, note: noteText } }
+      return next
+    })
+    queueEdit({ number, date, status: existingStatus, note: noteText })
     setNoteTarget(null)
   }
 
-  const getStudentStats = (studentId: number) => {
+  const getStudentStats = (number: number) => {
+    if (!data) return { total: 0, present: 0, absent: 0, late: 0, earlyLeave: 0, official: 0, suspensionMourning: 0, rate: 0 }
     let total = 0, present = 0, absent = 0, late = 0, earlyLeave = 0, official = 0, suspensionMourning = 0
-    for (const lesson of lessons) {
-      const key = recordKey(lesson.id!, studentId)
-      const rec = records.get(key)
+    for (const date of data.dates) {
+      const rec = data.records[date]?.[number]
       if (!rec) continue
       if (EXCLUDED_FROM_TOTAL.includes(rec.status)) {
         if (rec.status === 'official') official++
@@ -140,20 +129,23 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     return WEEKDAYS[d.getDay()]
   }
 
-  const updateLessonDate = async (lessonId: number, newDate: string) => {
+  const updateLessonDate = async (oldDate: string, newDate: string) => {
     if (!newDate) return
-    await db.lessons.update(lessonId, { date: newDate })
-    setEditingLessonId(null)
-    load()
+    flushEdits()
+    setData(await api.updateLessonDate(classId, oldDate, newDate))
+    setEditingDate(null)
   }
 
+  const sortedDates = data ? [...data.dates].sort((a, b) => a.localeCompare(b)) : []
+
   const exportCsv = () => {
+    if (!data) return
     const BOM = '﻿'
-    const header = ['出席番号', '氏名', ...lessons.map(l => formatDate(l.date)), '出席', '欠課時数', '遅刻', '早退', '公欠', '出停忌引時数', '出席率']
-    const rows = students.map(s => {
-      const stats = getStudentStats(s.id!)
-      const statuses = lessons.map(l => {
-        const rec = records.get(recordKey(l.id!, s.id!))
+    const header = ['出席番号', '氏名', ...sortedDates.map(formatDate), '出席', '欠課時数', '遅刻', '早退', '公欠', '出停忌引時数', '出席率']
+    const rows = data.students.map(s => {
+      const stats = getStudentStats(s.number)
+      const statuses = sortedDates.map(date => {
+        const rec = data.records[date]?.[s.number]
         return rec ? STATUS_CONFIG[rec.status].symbol : ''
       })
       // 欠課時数 = 実欠席 + (遅刻+早退)を3回で1回換算した分
@@ -171,21 +163,21 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     URL.revokeObjectURL(url)
   }
 
-  let longPressTimer: ReturnType<typeof setTimeout> | null = null
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handlePointerDown = (studentId: number, lessonId: number) => {
+  const handlePointerDown = (number: number, date: string) => {
     if (isLocked) return
-    longPressTimer = setTimeout(() => {
-      openNote(studentId, lessonId)
-      longPressTimer = null
+    longPressTimer.current = setTimeout(() => {
+      openNote(number, date)
+      longPressTimer.current = null
     }, 500)
   }
 
-  const handlePointerUp = (studentId: number, lessonId: number, e: React.PointerEvent<HTMLTableCellElement>) => {
+  const handlePointerUp = (number: number, date: string, e: React.PointerEvent<HTMLTableCellElement>) => {
     if (isLocked) return
-    if (longPressTimer) {
-      clearTimeout(longPressTimer)
-      longPressTimer = null
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
       const POPUP_HEIGHT = 110
       const yBelow = rect.bottom + 4
@@ -193,13 +185,15 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
         ? Math.max(4, rect.top - POPUP_HEIGHT - 4)
         : yBelow
       setStatusTarget({
-        studentId,
-        lessonId,
+        number,
+        date,
         x: Math.min(rect.left, window.innerWidth - 220),
         y,
       })
     }
   }
+
+  if (!data) return <div className="p-4 text-gray-400 text-center">読み込み中...</div>
 
   return (
     <div className="p-2">
@@ -227,13 +221,13 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
         </button>
       </div>
 
-      {students.length === 0 && (
+      {data.students.length === 0 && (
         <p className="text-gray-400 text-center py-8">
-          生徒が登録されていません。戻って生徒を追加してください。
+          名簿マスタにこの学年組の生徒が見つかりません。
         </p>
       )}
 
-      {students.length > 0 && (
+      {data.students.length > 0 && (
         <div className="overflow-x-auto border border-gray-400 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
           <table className="text-sm border-collapse w-max min-w-full">
             <thead>
@@ -244,27 +238,27 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                 <th className="sticky left-10 bg-gray-50 dark:bg-gray-700 z-10 border-b border-r border-gray-500 dark:border-gray-500 px-2 py-2 text-left min-w-[80px]">
                   氏名
                 </th>
-                {lessons.map(l => {
-                  const weekday = formatWeekday(l.date)
+                {sortedDates.map(date => {
+                  const weekday = formatWeekday(date)
                   const isWeekend = weekday === '土' || weekday === '日'
                   return (
-                    <th key={l.id} className="border-b border-r border-gray-400 dark:border-gray-700 px-1 py-1 text-center min-w-[44px]">
-                      {editingLessonId === l.id ? (
+                    <th key={date} className="border-b border-r border-gray-400 dark:border-gray-700 px-1 py-1 text-center min-w-[44px]">
+                      {editingDate === date ? (
                         <input
                           type="date"
-                          defaultValue={l.date}
-                          onBlur={e => updateLessonDate(l.id!, e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') updateLessonDate(l.id!, (e.target as HTMLInputElement).value) }}
+                          defaultValue={date}
+                          onBlur={e => updateLessonDate(date, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') updateLessonDate(date, (e.target as HTMLInputElement).value) }}
                           className="text-xs w-28 border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-gray-100 rounded px-1"
                           autoFocus
                         />
                       ) : (
                         <div
                           className={`text-xs ${isLocked ? '' : 'cursor-pointer'}`}
-                          onClick={() => { if (!isLocked) setEditingLessonId(l.id!) }}
+                          onClick={() => { if (!isLocked) setEditingDate(date) }}
                           title={isLocked ? undefined : 'クリックで日付修正'}
                         >
-                          <div>{formatDate(l.date)}</div>
+                          <div>{formatDate(date)}</div>
                           <div className={isWeekend ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}>
                             {weekday}
                           </div>
@@ -272,7 +266,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                       )}
                       {!isLocked && (
                         <button
-                          onClick={() => deleteLesson(l.id!)}
+                          onClick={() => deleteLesson(date)}
                           className="text-[10px] text-red-400 hover:text-red-600"
                         >
                           ×
@@ -289,8 +283,8 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
               </tr>
             </thead>
             <tbody>
-              {students.map(s => {
-                const stats = getStudentStats(s.id!)
+              {data.students.map(s => {
+                const stats = getStudentStats(s.number)
                 const isGroupEnd = s.number % 5 === 0
                 // Zone A: No/氏名（sticky列）
                 const zoneABorder = 'border-gray-500 dark:border-gray-500'
@@ -307,25 +301,24 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                   ? { borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: isDark ? '#4b5563' : '#9ca3af' }
                   : {}
                 return (
-                  <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <tr key={s.number} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className={`sticky left-0 bg-white dark:bg-gray-800 z-10 border-b border-r ${zoneABorder} px-2 py-1 text-gray-400 text-center`} style={zoneASep}>
                       {s.number}
                     </td>
                     <td className={`sticky left-10 bg-white dark:bg-gray-800 z-10 border-b border-r ${zoneABorder} px-2 py-1 whitespace-nowrap`} style={zoneASep}>
                       {s.name || <span className="text-gray-300 dark:text-gray-600 italic">未入力</span>}
                     </td>
-                    {lessons.map(l => {
-                      const key = recordKey(l.id!, s.id!)
-                      const rec = records.get(key)
+                    {sortedDates.map(date => {
+                      const rec = data.records[date]?.[s.number]
                       const config = rec ? STATUS_CONFIG[rec.status] : null
                       return (
                         <td
-                          key={l.id}
+                          key={date}
                           className={`border-b border-r ${zoneBBorder} text-center select-none ${isLocked ? '' : 'cursor-pointer'} ${config?.color || ''} ${rec?.note ? 'ring-1 ring-inset ring-blue-400' : ''}`}
                           style={{ minWidth: 44, minHeight: 36, ...zoneBSep }}
-                          onPointerDown={() => handlePointerDown(s.id!, l.id!)}
-                          onPointerUp={e => handlePointerUp(s.id!, l.id!, e)}
-                          onPointerCancel={() => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null } }}
+                          onPointerDown={() => handlePointerDown(s.number, date)}
+                          onPointerUp={e => handlePointerUp(s.number, date, e)}
+                          onPointerCancel={() => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null } }}
                         >
                           <span className="text-base font-medium">{config?.symbol || ''}</span>
                         </td>
@@ -366,7 +359,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
               {STATUS_CYCLE.map(status => (
                 <button
                   key={status}
-                  onClick={() => setStatus(statusTarget.lessonId, statusTarget.studentId, status)}
+                  onClick={() => setStatus(statusTarget.date, statusTarget.number, status)}
                   className={`flex flex-col items-center px-2 py-1.5 rounded text-xs font-medium hover:opacity-80 ${STATUS_CONFIG[status].color}`}
                 >
                   <span className="text-base leading-tight">{STATUS_CONFIG[status].symbol}</span>

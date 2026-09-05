@@ -6,8 +6,8 @@ import { useDarkMode } from './hooks/useDarkMode'
 
 type Screen =
   | { type: 'home' }
-  | { type: 'attendance'; classId: number; className: string }
-  | { type: 'students'; classId: number; className: string }
+  | { type: 'attendance'; classId: string; className: string }
+  | { type: 'students'; classId: string; className: string }
 
 function App() {
   const [screen, setScreen] = useState<Screen>({ type: 'home' })

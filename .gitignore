@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# npm run build:gas の出力（ソースは gas/Code.gs, gas/appsscript.json）
+/gas/index.html
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -26,3 +29,4 @@ dist-ssr
 # docs (private)
 /docs
 test_e2e.py
+.serena/
