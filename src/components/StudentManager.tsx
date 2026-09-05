@@ -7,15 +7,33 @@ interface Props {
 }
 
 export function StudentManager({ classId }: Props) {
-  const [students, setStudents] = useState<Student[]>([])
+  const [students, setStudents] = useState<Student[] | null>(null)
   const [expandedNumber, setExpandedNumber] = useState<number | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
-  useEffect(() => {
-    api.getStudents(classId).then(setStudents)
-  }, [classId])
+  const load = () => {
+    setLoadError(null)
+    setStudents(null)
+    api.getStudents(classId).then(setStudents).catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
+  }
+
+  useEffect(load, [classId])
+
+  const syncRoster = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      setStudents(await api.syncRoster(classId))
+    } catch (e) {
+      alert('名簿の再取り込みに失敗しました: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const updateMemoLocal = (number: number, memo: string) => {
-    setStudents(prev => prev.map(s => s.number === number ? { ...s, memo } : s))
+    setStudents(prev => prev && prev.map(s => s.number === number ? { ...s, memo } : s))
   }
 
   const saveMemo = (number: number, memo: string) => {
@@ -25,17 +43,39 @@ export function StudentManager({ classId }: Props) {
   return (
     <div className="p-4 max-w-lg mx-auto">
       <p className="text-xs text-gray-400 mb-3">
-        番号・氏名は名簿マスタから自動取得（このアプリからは編集できません）。メモのみ編集できます。
+        番号・氏名はクラス作成時に名簿マスタからコピーされます（このアプリからは編集できません）。
+        名簿マスタ側の変更は自動反映されないため、変更後は下のボタンで再取り込みしてください。メモのみ編集できます。
       </p>
 
-      {students.length === 0 && (
+      <button
+        onClick={syncRoster}
+        disabled={syncing}
+        className="text-xs border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-2 py-1 rounded mb-3 disabled:opacity-40"
+      >
+        {syncing ? '取り込み中...' : '名簿を再取り込み'}
+      </button>
+
+      {loadError && (
+        <div className="text-center py-8">
+          <p className="text-red-500 mb-2">読み込みに失敗しました: {loadError}</p>
+          <button onClick={load} className="text-sm border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded">
+            再読み込み
+          </button>
+        </div>
+      )}
+
+      {!loadError && students === null && (
+        <p className="text-gray-400 text-center py-8">読み込み中...</p>
+      )}
+
+      {!loadError && students?.length === 0 && (
         <p className="text-gray-400 text-center py-8">
-          名簿マスタにこの学年組の生徒が見つかりません。
+          生徒がいません。「名簿を再取り込み」を押してください。
         </p>
       )}
 
       <ul className="space-y-1">
-        {students.map(s => (
+        {students?.map(s => (
           <li
             key={s.number}
             className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"

@@ -15,6 +15,10 @@ dist-ssr
 # npm run build:gas の出力（ソースは gas/Code.gs, gas/appsscript.json）
 /gas/index.html
 
+# clasp（個人アカウントでの動作検証用。scriptIdは各自のプロジェクトを指すため共有しない）
+.clasp.json
+.clasp-dev/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
