@@ -19,7 +19,7 @@ export function StudentManager({ classId }: Props) {
   }
 
   const saveMemo = (number: number, memo: string) => {
-    api.saveMemo(classId, number, memo)
+    api.saveMemo(classId, number, memo).catch(() => alert('メモの保存に失敗しました。'))
   }
 
   return (

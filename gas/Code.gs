@@ -32,6 +32,8 @@ function symbolToStatus_(symbol) {
 }
 
 // クラス作成/削除や出欠の書き込みが複数教員から同時に来た場合の競合を防ぐ
+// ponytail: スクリプト全体で単一ロック。学校規模の同時アクセスなら10秒以内に収まる想定。
+// 待ち時間が問題になったらクラスID単位のロックに分ける。
 function withLock_(fn) {
   const lock = LockService.getScriptLock()
   lock.waitLock(10000)
@@ -123,7 +125,7 @@ function createClass(gradeClass, subject) {
     const classes = listClasses()
     const sheetName = uniqueSheetName_(ss, sanitizeSheetName_(`${gradeClass} ${subject}`))
     const createdAt = new Date().toISOString()
-    const sortOrder = classes.length
+    const sortOrder = classes.length > 0 ? Math.max(...classes.map(c => c.sortOrder)) + 1 : 0
 
     listSheet.appendRow([gradeClass, subject, sheetName, sortOrder, createdAt])
 
@@ -178,9 +180,26 @@ function getClassSheetAndHeader_(id) {
   const ss = getAttendanceSs_()
   const sheet = ss.getSheetByName(id)
   if (!sheet) throw new Error('クラスが見つかりません: ' + id)
+  syncRosterRows_(sheet, id)
   const lastCol = Math.max(sheet.getLastColumn(), 2)
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
   return { sheet, header, lastCol }
+}
+
+// 名簿マスタに後から追加された生徒を、この関数を通る全操作（メモ保存・出欠保存など）の
+// 前に出欠シートへ反映する。ここで同期しないと該当生徒の行が無く保存が無言で失敗する。
+function syncRosterRows_(sheet, id) {
+  const classInfo = listClasses().find(c => c.id === id)
+  if (!classInfo) return
+  const roster = getRoster(classInfo.gradeClass)
+  const lastRow = sheet.getLastRow()
+  const existingNumbers = new Set(
+    lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => r[0]) : []
+  )
+  const missing = roster.filter(s => !existingNumbers.has(s.number))
+  if (missing.length > 0) {
+    sheet.getRange(lastRow + 1, 1, missing.length, 2).setValues(missing.map(s => [s.number, '']))
+  }
 }
 
 // header[0]='番号', header[1]='メモ', header[2..]=授業日
@@ -191,7 +210,7 @@ function dateColumns_(header) {
 function getStudents(id) {
   const classInfo = getClassInfo_(id)
   const roster = getRoster(classInfo.gradeClass)
-  const { sheet, lastCol } = getClassSheetAndHeader_(id)
+  const { sheet } = getClassSheetAndHeader_(id)
   const lastRow = sheet.getLastRow()
   const memoByNumber = new Map()
   if (lastRow > 1) {
@@ -248,8 +267,9 @@ function getAttendanceData(id) {
 
 function addLesson(id) {
   return withLock_(() => {
-    const { sheet, lastCol } = getClassSheetAndHeader_(id)
+    const { sheet, header, lastCol } = getClassSheetAndHeader_(id)
     const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd')
+    if (dateColumns_(header).some(d => d.date === today)) return getAttendanceData(id)
     const newCol = lastCol + 1
     sheet.getRange(1, newCol).setValue(today)
     const lastRow = sheet.getLastRow()
@@ -272,6 +292,7 @@ function deleteLesson(id, date) {
 function updateLessonDate(id, oldDate, newDate) {
   return withLock_(() => {
     const { sheet, header } = getClassSheetAndHeader_(id)
+    if (dateColumns_(header).some(d => d.date === newDate)) throw new Error('その日付の授業日は既に存在します: ' + newDate)
     const col = dateColumns_(header).find(d => d.date === oldDate)
     if (col) sheet.getRange(1, col.col).setValue(newDate)
     return getAttendanceData(id)

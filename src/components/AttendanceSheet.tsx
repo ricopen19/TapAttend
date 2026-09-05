@@ -39,7 +39,10 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     if (pendingEdits.current.size === 0) return
     const edits = Array.from(pendingEdits.current.values())
     pendingEdits.current.clear()
-    api.saveAttendanceEdits(classId, edits)
+    api.saveAttendanceEdits(classId, edits).catch(() => {
+      edits.forEach(edit => pendingEdits.current.set(`${edit.number}-${edit.date}`, edit))
+      alert('出欠の保存に失敗しました。もう一度お試しください。')
+    })
   }, [classId])
 
   useEffect(() => () => flushEdits(), [flushEdits])
@@ -51,6 +54,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   }
 
   const addLesson = async () => {
+    flushEdits()
     setData(await api.addLesson(classId))
   }
 
