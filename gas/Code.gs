@@ -1,16 +1,27 @@
 // TapAttend GAS バックエンド
 //
 // スプレッドシート構成:
-// - 名簿マスタ（ROSTER_SPREADSHEET_ID）: 学年組と同名タブ。3行目ヘッダー、4行目以降が
-//   データ。A列=出席番号、C列=氏名。読み取り専用。
-// - 出欠データ（ATTENDANCE_SPREADSHEET_ID）: 初回アクセス時に自動作成。
-//   - 「クラス一覧」タブ: 学年組, 教科名, シート名(id), 表示順, 作成日時
-//   - クラスごとのタブ: A列=出席番号, B列=メモ, C列以降=授業日（ヘッダーが日付文字列）。
-//     セルの値=出欠記号、セルのノート=その日の備考。
+// - 名簿マスタ（学年ごとに別スプレッドシート、IDは「設定」タブで管理）: 学年組と同名タブ。
+//   3行目ヘッダー、4行目以降がデータ。A列=出席番号、C列=氏名。読み取り専用。
+// - 出欠データ（ATTENDANCE_SPREADSHEET_ID）: 初回アクセス時に自動作成。司令塔となる索引ファイル。
+//   - 「クラス一覧」タブ: 学年組, 教科名, 組スプレッドシートID, タブ名, 表示順, 作成日時
+//   - 「設定」タブ: 学年, スプレッドシートID（名簿マスタの参照先。年度更新時はここを書き換える）
+// - 組ごとの出欠データ（`${年度}_${学年組}_出欠席データ`、ATTENDANCE_FOLDER_NAME フォルダ配下に自動作成）:
+//   その学年組で開講している教科ごとに1タブ。A列=出席番号, B列=氏名, C列=メモ,
+//   D列以降=授業日（ヘッダーが日付文字列）。セルの値=出欠記号、セルのノート=その日の備考。
+//   番号・氏名はクラス作成時に名簿マスタからコピーされる。以後は自動同期せず、
+//   「名簿を再取り込み」操作（syncRoster）を呼んだときだけ名簿マスタを参照する。
+//   1つのスプレッドシートが学年組全体×1年分に膨れ上がらないよう、学年組単位でファイルを分けている。
 //
-// 初回セットアップ: GASエディタから setRosterSpreadsheetId('名簿マスタのID') を1回実行する。
+// クラスの id はクライアントに対しては `${組スプレッドシートID}:${タブ名}` という不透明な文字列として渡す。
+// 学年組のリネームは非対応（別ファイルへの移動が必要になるため）。クラスを削除して作り直してもらう。
+//
+// 初回セットアップ: 出欠データスプレッドシートの「設定」タブに学年とスプレッドシートIDを入力する。
 
 const CLASS_LIST_SHEET = 'クラス一覧'
+const SETTINGS_SHEET = '設定'
+const ATTENDANCE_FOLDER_NAME = 'TapAttend出欠データ'
+const CLASS_ID_SEP = ':'
 
 const STATUS_TO_SYMBOL = {
   present: '○',
@@ -50,46 +61,144 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, user-scalable=no')
 }
 
-// 初回セットアップ用。GASエディタの実行ボタンから手動で1回だけ呼ぶ。
-function setRosterSpreadsheetId(id) {
-  PropertiesService.getScriptProperties().setProperty('ROSTER_SPREADSHEET_ID', id)
+function gradeOf_(gradeClass) {
+  const m = String(gradeClass).match(/^\d+/)
+  if (!m) throw new Error('学年組の先頭が数字ではないため学年を判定できません: ' + gradeClass)
+  return m[0]
 }
 
-function getRosterSs_() {
-  const id = PropertiesService.getScriptProperties().getProperty('ROSTER_SPREADSHEET_ID')
-  if (!id) throw new Error('名簿マスタのスプレッドシートIDが未設定です。setRosterSpreadsheetId を実行してください。')
-  return SpreadsheetApp.openById(id)
+// 学年ごとの名簿マスタIDは出欠データスプレッドシートの「設定」タブ（学年, スプレッドシートID）で管理する。
+// 年度更新時はGASエディタを触らず、このタブのセルを書き換えるだけでよい。
+function getSettingsSheet_() {
+  const ss = getAttendanceSs_()
+  let sheet = ss.getSheetByName(SETTINGS_SHEET)
+  if (!sheet) {
+    sheet = ss.insertSheet(SETTINGS_SHEET)
+    sheet.getRange(1, 1, 1, 2).setValues([['学年', 'スプレッドシートID']])
+  }
+  return sheet
 }
+
+// ponytail: SpreadsheetApp.openById は呼ぶたびにGoogle側と通信が発生し無視できない遅さになるため、
+// 1回のリクエスト（1回のスクリプト実行）内では同じスプレッドシートを開き直さず使い回す。
+const rosterSsCache_ = {}
+
+function getRosterSs_(gradeClass) {
+  const grade = gradeOf_(gradeClass)
+  if (rosterSsCache_[grade]) return rosterSsCache_[grade]
+
+  const sheet = getSettingsSheet_()
+  const lastRow = sheet.getLastRow()
+  const row = lastRow > 1
+    ? sheet.getRange(2, 1, lastRow - 1, 2).getValues().find(r => String(r[0]).trim() === grade)
+    : null
+  if (!row || !row[1]) {
+    throw new Error(`${grade}学年の名簿マスタのスプレッドシートIDが「設定」タブに登録されていません。`)
+  }
+  const ss = SpreadsheetApp.openById(String(row[1]).trim())
+  rosterSsCache_[grade] = ss
+  return ss
+}
+
+let attendanceSs_ = null
 
 function getAttendanceSs_() {
+  if (attendanceSs_) return attendanceSs_
+
   const props = PropertiesService.getScriptProperties()
   let id = props.getProperty('ATTENDANCE_SPREADSHEET_ID')
-  if (id) return SpreadsheetApp.openById(id)
+  if (id) {
+    attendanceSs_ = SpreadsheetApp.openById(id)
+    return attendanceSs_
+  }
 
   const ss = SpreadsheetApp.create('TapAttend出欠データ')
   props.setProperty('ATTENDANCE_SPREADSHEET_ID', ss.getId())
   const sheet = ss.getSheets()[0]
   sheet.setName(CLASS_LIST_SHEET)
-  sheet.getRange(1, 1, 1, 5).setValues([['学年組', '教科名', 'シート名', '表示順', '作成日時']])
+  sheet.getRange(1, 1, 1, 6).setValues([['学年組', '教科名', '組スプレッドシートID', 'タブ名', '表示順', '作成日時']])
+  attendanceSs_ = ss
+  getSettingsSheet_()
   return ss
+}
+
+let attendanceFolder_ = null
+
+function getAttendanceFolder_() {
+  if (attendanceFolder_) return attendanceFolder_
+
+  const props = PropertiesService.getScriptProperties()
+  let id = props.getProperty('ATTENDANCE_FOLDER_ID')
+  if (id) {
+    attendanceFolder_ = DriveApp.getFolderById(id)
+    return attendanceFolder_
+  }
+
+  const folder = DriveApp.createFolder(ATTENDANCE_FOLDER_NAME)
+  props.setProperty('ATTENDANCE_FOLDER_ID', folder.getId())
+  attendanceFolder_ = folder
+  return attendanceFolder_
+}
+
+// 学校年度（4月始まり）。1〜3月は前年度扱い。
+function fiscalYear_() {
+  const now = new Date()
+  const month = Number(Utilities.formatDate(now, 'Asia/Tokyo', 'M'))
+  const year = Number(Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy'))
+  return month < 4 ? year - 1 : year
 }
 
 function sanitizeSheetName_(name) {
   return name.replace(/[[\]*/\\?:]/g, '_').slice(0, 90)
 }
 
-function uniqueSheetName_(ss, base) {
-  let name = base
-  let i = 2
-  while (ss.getSheetByName(name)) {
-    name = `${base}_${i}`
-    i++
-  }
-  return name
+function encodeClassId_(groupSsId, tabName) {
+  return groupSsId + CLASS_ID_SEP + tabName
+}
+
+function decodeClassId_(id) {
+  const i = String(id).indexOf(CLASS_ID_SEP)
+  if (i === -1) throw new Error('不正なクラスIDです: ' + id)
+  return { groupSsId: id.slice(0, i), tabName: id.slice(i + 1) }
+}
+
+// ponytail: グループスプレッドシートも同じ理由（openByIdの通信コスト）で1回のリクエスト内は使い回す。
+const groupSsCache_ = {}
+
+function openGroupSs_(groupSsId) {
+  if (groupSsCache_[groupSsId]) return groupSsCache_[groupSsId]
+  const ss = SpreadsheetApp.openById(groupSsId)
+  groupSsCache_[groupSsId] = ss
+  return ss
+}
+
+function findGroupSpreadsheetId_(gradeClass) {
+  const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)
+  const lastRow = listSheet.getLastRow()
+  if (lastRow < 2) return null
+  const values = listSheet.getRange(2, 1, lastRow - 1, 4).getValues()
+  const row = values.find(r => r[0] === gradeClass)
+  return row ? row[2] : null
+}
+
+// 学年組ごとに1ファイル。既にその学年組のクラスがあれば同じファイルを使い回し、
+// 無ければ新規作成する（教科タブはcreateClass側で追加する）。
+function getOrCreateGroupSpreadsheet_(gradeClass) {
+  const existingId = findGroupSpreadsheetId_(gradeClass)
+  if (existingId) return { id: existingId, ss: openGroupSs_(existingId), isNew: false }
+
+  const name = `${fiscalYear_()}_${gradeClass}_出欠席データ`
+  const ss = SpreadsheetApp.create(name)
+  const file = DriveApp.getFileById(ss.getId())
+  const folder = getAttendanceFolder_()
+  folder.addFile(file)
+  DriveApp.getRootFolder().removeFile(file)
+  groupSsCache_[ss.getId()] = ss
+  return { id: ss.getId(), ss, isNew: true }
 }
 
 function getRoster(gradeClass) {
-  const ss = getRosterSs_()
+  const ss = getRosterSs_(gradeClass)
   const sheet = ss.getSheetByName(gradeClass)
   if (!sheet) throw new Error('名簿シートが見つかりません: ' + gradeClass)
   const lastRow = sheet.getLastRow()
@@ -105,68 +214,90 @@ function listClasses() {
   const sheet = ss.getSheetByName(CLASS_LIST_SHEET)
   const lastRow = sheet.getLastRow()
   if (lastRow < 2) return []
-  const values = sheet.getRange(2, 1, lastRow - 1, 5).getValues()
+  const values = sheet.getRange(2, 1, lastRow - 1, 6).getValues()
   return values
-    .filter(row => row[2])
+    .filter(row => row[2] && row[3])
     .map(row => ({
-      id: row[2],
+      id: encodeClassId_(row[2], row[3]),
       gradeClass: row[0],
       subject: row[1],
-      sortOrder: row[3],
-      createdAt: row[4],
+      sortOrder: row[4],
+      createdAt: row[5],
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
 function createClass(gradeClass, subject) {
   return withLock_(() => {
-    const ss = getAttendanceSs_()
-    const listSheet = ss.getSheetByName(CLASS_LIST_SHEET)
-    const classes = listClasses()
-    const sheetName = uniqueSheetName_(ss, sanitizeSheetName_(`${gradeClass} ${subject}`))
-    const createdAt = new Date().toISOString()
-    const sortOrder = classes.length > 0 ? Math.max(...classes.map(c => c.sortOrder)) + 1 : 0
-
-    listSheet.appendRow([gradeClass, subject, sheetName, sortOrder, createdAt])
-
-    const classSheet = ss.insertSheet(sheetName)
-    classSheet.getRange(1, 1, 1, 2).setValues([['番号', 'メモ']])
+    // 名簿が引けないなら、クラス一覧・クラスシートを作る前に失敗させる（壊れたクラスを残さない）
     const roster = getRoster(gradeClass)
-    if (roster.length > 0) {
-      classSheet.getRange(2, 1, roster.length, 2).setValues(roster.map(s => [s.number, '']))
+
+    const classes = listClasses()
+    if (classes.some(c => c.gradeClass === gradeClass && c.subject === subject)) {
+      throw new Error(`${gradeClass} の ${subject} は既に存在します。`)
     }
 
-    return { id: sheetName, gradeClass, subject, sortOrder, createdAt }
+    const { ss: groupSs, id: groupSsId, isNew } = getOrCreateGroupSpreadsheet_(gradeClass)
+    const tabName = sanitizeSheetName_(subject)
+    if (groupSs.getSheetByName(tabName)) {
+      throw new Error(`${gradeClass} に ${subject} のタブが既に存在します。`)
+    }
+
+    const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)
+    const createdAt = new Date().toISOString()
+    const sortOrder = classes.length > 0 ? Math.max(...classes.map(c => c.sortOrder)) + 1 : 0
+    listSheet.appendRow([gradeClass, subject, groupSsId, tabName, sortOrder, createdAt])
+
+    const classSheet = isNew ? groupSs.getSheets()[0].setName(tabName) : groupSs.insertSheet(tabName)
+    classSheet.getRange(1, 1, 1, 3).setValues([['番号', '氏名', 'メモ']])
+    if (roster.length > 0) {
+      classSheet.getRange(2, 1, roster.length, 3).setValues(roster.map(s => [s.number, s.name, '']))
+    }
+
+    return { id: encodeClassId_(groupSsId, tabName), gradeClass, subject, sortOrder, createdAt }
   })
 }
 
+// クラス一覧からidに一致する行を探す。見つからなければnull。
+function findClassRow_(id) {
+  const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)
+  const values = listSheet.getDataRange().getValues()
+  for (let i = 1; i < values.length; i++) {
+    if (encodeClassId_(values[i][2], values[i][3]) === id) {
+      return { listSheet, rowIndex: i + 1, groupSsId: values[i][2], tabName: values[i][3] }
+    }
+  }
+  return null
+}
+
+// 学年組の変更は非対応（別ファイルへの移動が必要になるため）。教科名のみ変更できる。
 function renameClass(id, gradeClass, subject) {
   withLock_(() => {
-    const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)
-    const values = listSheet.getDataRange().getValues()
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][2] === id) {
-        listSheet.getRange(i + 1, 1, 1, 2).setValues([[gradeClass, subject]])
-        return
-      }
+    const current = getClassInfo_(id)
+    if (current.gradeClass !== gradeClass) {
+      throw new Error('学年組は変更できません。クラスを削除して作り直してください。')
     }
-    throw new Error('クラスが見つかりません: ' + id)
+    const row = findClassRow_(id)
+    if (!row) throw new Error('クラスが見つかりません: ' + id)
+    row.listSheet.getRange(row.rowIndex, 2).setValue(subject)
   })
 }
 
 function deleteClass(id) {
   withLock_(() => {
-    const ss = getAttendanceSs_()
-    const listSheet = ss.getSheetByName(CLASS_LIST_SHEET)
-    const values = listSheet.getDataRange().getValues()
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][2] === id) {
-        listSheet.deleteRow(i + 1)
-        break
-      }
+    const row = findClassRow_(id)
+    if (!row) return
+    row.listSheet.deleteRow(row.rowIndex)
+
+    const groupSs = openGroupSs_(row.groupSsId)
+    const sheet = groupSs.getSheetByName(row.tabName)
+    if (!sheet) return
+    // 学年組の最後のタブならファイルごと不要になる（スプレッドシートはタブ0枚にできない）
+    if (groupSs.getSheets().length <= 1) {
+      DriveApp.getFileById(row.groupSsId).setTrashed(true)
+    } else {
+      groupSs.deleteSheet(sheet)
     }
-    const sheet = ss.getSheetByName(id)
-    if (sheet) ss.deleteSheet(sheet)
   })
 }
 
@@ -177,48 +308,57 @@ function getClassInfo_(id) {
 }
 
 function getClassSheetAndHeader_(id) {
-  const ss = getAttendanceSs_()
-  const sheet = ss.getSheetByName(id)
+  const { groupSsId, tabName } = decodeClassId_(id)
+  const ss = openGroupSs_(groupSsId)
+  const sheet = ss.getSheetByName(tabName)
   if (!sheet) throw new Error('クラスが見つかりません: ' + id)
-  syncRosterRows_(sheet, id)
-  const lastCol = Math.max(sheet.getLastColumn(), 2)
+  const lastCol = Math.max(sheet.getLastColumn(), 3)
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
   return { sheet, header, lastCol }
 }
 
-// 名簿マスタに後から追加された生徒を、この関数を通る全操作（メモ保存・出欠保存など）の
-// 前に出欠シートへ反映する。ここで同期しないと該当生徒の行が無く保存が無言で失敗する。
-function syncRosterRows_(sheet, id) {
-  const classInfo = listClasses().find(c => c.id === id)
-  if (!classInfo) return
-  const roster = getRoster(classInfo.gradeClass)
-  const lastRow = sheet.getLastRow()
-  const existingNumbers = new Set(
-    lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => r[0]) : []
-  )
-  const missing = roster.filter(s => !existingNumbers.has(s.number))
-  if (missing.length > 0) {
-    sheet.getRange(lastRow + 1, 1, missing.length, 2).setValues(missing.map(s => [s.number, '']))
-  }
+// 名簿マスタの生徒（番号・氏名）をクラスシートへ反映する。名簿マスタ側で氏名を修正した場合は
+// 既存行を上書きし、新しく追加された生徒は末尾に追記する。呼び出したときだけ名簿マスタを開く。
+function syncRoster(id) {
+  return withLock_(() => {
+    const classInfo = getClassInfo_(id)
+    const roster = getRoster(classInfo.gradeClass)
+    const { sheet } = getClassSheetAndHeader_(id)
+    const lastRow = sheet.getLastRow()
+    const rowByNumber = new Map()
+    if (lastRow > 1) {
+      sheet.getRange(2, 1, lastRow - 1, 1).getValues().forEach((row, i) => rowByNumber.set(row[0], i + 2))
+    }
+
+    const appended = []
+    roster.forEach(s => {
+      const rowIdx = rowByNumber.get(s.number)
+      if (rowIdx) {
+        sheet.getRange(rowIdx, 2).setValue(s.name)
+      } else {
+        appended.push([s.number, s.name, ''])
+      }
+    })
+    if (appended.length > 0) {
+      sheet.getRange(lastRow + 1, 1, appended.length, 3).setValues(appended)
+    }
+
+    return getStudents(id)
+  })
 }
 
-// header[0]='番号', header[1]='メモ', header[2..]=授業日
+// header[0]='番号', header[1]='氏名', header[2]='メモ', header[3..]=授業日
 function dateColumns_(header) {
-  return header.slice(2).map((date, i) => ({ date, col: i + 3 }))
+  return header.slice(3).map((date, i) => ({ date, col: i + 4 }))
 }
 
 function getStudents(id) {
-  const classInfo = getClassInfo_(id)
-  const roster = getRoster(classInfo.gradeClass)
   const { sheet } = getClassSheetAndHeader_(id)
   const lastRow = sheet.getLastRow()
-  const memoByNumber = new Map()
-  if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow - 1, 2).getValues().forEach(row => {
-      memoByNumber.set(row[0], row[1] || '')
-    })
-  }
-  return roster.map(s => ({ number: s.number, name: s.name, memo: memoByNumber.get(s.number) || '' }))
+  if (lastRow < 2) return []
+  return sheet.getRange(2, 1, lastRow - 1, 3).getValues()
+    .filter(row => row[0] !== '' && row[0] !== null)
+    .map(row => ({ number: row[0], name: row[1], memo: row[2] || '' }))
 }
 
 function saveMemo(id, number, memo) {
@@ -229,40 +369,44 @@ function saveMemo(id, number, memo) {
     const numbers = sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => r[0])
     const rowIdx = numbers.indexOf(number)
     if (rowIdx === -1) return
-    sheet.getRange(rowIdx + 2, 2).setValue(memo)
+    sheet.getRange(rowIdx + 2, 3).setValue(memo)
   })
 }
 
 function getAttendanceData(id) {
   const classInfo = getClassInfo_(id)
-  const roster = getRoster(classInfo.gradeClass)
   const { sheet, header, lastCol } = getClassSheetAndHeader_(id)
   const dates = dateColumns_(header).map(d => d.date)
 
   const lastRow = sheet.getLastRow()
   const statusRows = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : []
   const noteRows = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, lastCol).getNotes() : []
-  const byNumber = new Map()
-  statusRows.forEach((row, i) => {
-    byNumber.set(row[0], { memo: row[1] || '', statuses: row.slice(2), notes: noteRows[i].slice(2) })
-  })
 
-  const students = roster.map(s => ({ number: s.number, name: s.name, memo: (byNumber.get(s.number) || {}).memo || '' }))
+  const students = statusRows.map((row, i) => ({
+    number: row[0],
+    name: row[1],
+    memo: row[2] || '',
+    statuses: row.slice(3),
+    notes: noteRows[i].slice(3),
+  })).filter(s => s.number !== '' && s.number !== null)
 
   const records = {}
   dates.forEach((date, colIdx) => {
     records[date] = {}
     students.forEach(s => {
-      const rec = byNumber.get(s.number)
-      const symbol = rec ? rec.statuses[colIdx] : ''
       records[date][s.number] = {
-        status: symbolToStatus_(symbol),
-        note: rec ? (rec.notes[colIdx] || '') : '',
+        status: symbolToStatus_(s.statuses[colIdx]),
+        note: s.notes[colIdx] || '',
       }
     })
   })
 
-  return { class: classInfo, students, dates, records }
+  return {
+    class: classInfo,
+    students: students.map(s => ({ number: s.number, name: s.name, memo: s.memo })),
+    dates,
+    records,
+  }
 }
 
 function addLesson(id) {
@@ -271,7 +415,7 @@ function addLesson(id) {
     const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd')
     if (dateColumns_(header).some(d => d.date === today)) return getAttendanceData(id)
     const newCol = lastCol + 1
-    sheet.getRange(1, newCol).setValue(today)
+    sheet.getRange(1, newCol).setNumberFormat('@').setValue(today)
     const lastRow = sheet.getLastRow()
     if (lastRow > 1) {
       sheet.getRange(2, newCol, lastRow - 1, 1).setValue(STATUS_TO_SYMBOL.present)
@@ -294,7 +438,7 @@ function updateLessonDate(id, oldDate, newDate) {
     const { sheet, header } = getClassSheetAndHeader_(id)
     if (dateColumns_(header).some(d => d.date === newDate)) throw new Error('その日付の授業日は既に存在します: ' + newDate)
     const col = dateColumns_(header).find(d => d.date === oldDate)
-    if (col) sheet.getRange(1, col.col).setValue(newDate)
+    if (col) sheet.getRange(1, col.col).setNumberFormat('@').setValue(newDate)
     return getAttendanceData(id)
   })
 }

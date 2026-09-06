@@ -11,12 +11,26 @@ interface Props {
 
 const FLUSH_DELAY_MS = 800
 
+// ponytail: タブを開いている間だけのメモリキャッシュ（リロードで消える）。
+// 前回表示を即座に出しつつ裏で再取得するSWR的な動きにして、クラスを開き直すたびの
+// 待ち時間をなくす。localStorage等への永続化はしない（他教員・他端末との不整合を避けるため）。
+const attendanceCache = new Map<string, AttendanceData>()
+
 export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
-  const [data, setData] = useState<AttendanceData | null>(null)
+  const [data, setDataRaw] = useState<AttendanceData | null>(() => attendanceCache.get(classId) ?? null)
+  const setData = (value: AttendanceData | null | ((prev: AttendanceData | null) => AttendanceData | null)) => {
+    setDataRaw(prev => {
+      const next = typeof value === 'function' ? (value as (p: AttendanceData | null) => AttendanceData | null)(prev) : value
+      if (next) attendanceCache.set(classId, next)
+      return next
+    })
+  }
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [noteTarget, setNoteTarget] = useState<{ number: number; date: string } | null>(null)
   const [noteText, setNoteText] = useState('')
   const [editingDate, setEditingDate] = useState<string | null>(null)
   const [isLocked, setIsLocked] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [statusTarget, setStatusTarget] = useState<{
     number: number
     date: string
@@ -30,7 +44,12 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
-    setData(await api.getAttendanceData(classId))
+    setLoadError(null)
+    try {
+      setData(await api.getAttendanceData(classId))
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e))
+    }
   }, [classId])
 
   useEffect(() => { load() }, [load])
@@ -54,14 +73,30 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
   }
 
   const addLesson = async () => {
+    if (busy) return
+    setBusy(true)
     flushEdits()
-    setData(await api.addLesson(classId))
+    try {
+      setData(await api.addLesson(classId))
+    } catch (e) {
+      alert('授業日の追加に失敗しました: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const deleteLesson = async (date: string) => {
+    if (busy) return
     if (!confirm('この授業日を削除しますか？')) return
+    setBusy(true)
     flushEdits()
-    setData(await api.deleteLesson(classId, date))
+    try {
+      setData(await api.deleteLesson(classId, date))
+    } catch (e) {
+      alert('授業日の削除に失敗しました: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const setStatus = (date: string, number: number, status: AttendanceStatus) => {
@@ -129,11 +164,24 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     return WEEKDAYS[d.getDay()]
   }
 
+  // input[type=date] の onBlur と Enter が両方発火するため、確定を1回に絞るガード。
+  // エディタを開くたび false に戻す。
+  const dateSubmitted = useRef(false)
+
   const updateLessonDate = async (oldDate: string, newDate: string) => {
-    if (!newDate) return
+    if (!newDate || newDate === oldDate) { setEditingDate(null); return }
+    if (busy || dateSubmitted.current) return
+    dateSubmitted.current = true
+    setBusy(true)
     flushEdits()
-    setData(await api.updateLessonDate(classId, oldDate, newDate))
-    setEditingDate(null)
+    try {
+      setData(await api.updateLessonDate(classId, oldDate, newDate))
+    } catch (e) {
+      alert('日付の変更に失敗しました: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+      setEditingDate(null)
+    }
   }
 
   const sortedDates = data ? [...data.dates].sort((a, b) => a.localeCompare(b)) : []
@@ -193,6 +241,17 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     }
   }
 
+  if (loadError) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-red-500 mb-2">読み込みに失敗しました: {loadError}</p>
+        <button onClick={load} className="text-sm border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded">
+          再読み込み
+        </button>
+      </div>
+    )
+  }
+
   if (!data) return <div className="p-4 text-gray-400 text-center">読み込み中...</div>
 
   return (
@@ -201,10 +260,10 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
       <div className="flex gap-2 mb-2 flex-wrap items-center">
         <button
           onClick={addLesson}
-          disabled={isLocked}
+          disabled={isLocked || busy}
           className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          ＋ 授業日追加
+          {busy ? '追加中...' : '＋ 授業日追加'}
         </button>
         <button onClick={exportCsv} className="border border-gray-300 dark:border-gray-600 dark:text-gray-300 px-3 py-1.5 rounded text-sm">
           CSV出力
@@ -223,7 +282,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
 
       {data.students.length === 0 && (
         <p className="text-gray-400 text-center py-8">
-          名簿マスタにこの学年組の生徒が見つかりません。
+          生徒がいません。「生徒」画面の「名簿を再取り込み」を押してください。
         </p>
       )}
 
@@ -255,7 +314,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                       ) : (
                         <div
                           className={`text-xs ${isLocked ? '' : 'cursor-pointer'}`}
-                          onClick={() => { if (!isLocked) setEditingDate(date) }}
+                          onClick={() => { if (!isLocked) { dateSubmitted.current = false; setEditingDate(date) } }}
                           title={isLocked ? undefined : 'クリックで日付修正'}
                         >
                           <div>{formatDate(date)}</div>
