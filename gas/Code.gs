@@ -357,6 +357,7 @@ function getStudents(id) {
   const lastRow = sheet.getLastRow()
   if (lastRow < 2) return []
   return sheet.getRange(2, 1, lastRow - 1, 3).getValues()
+    .filter(row => row[0] !== '' && row[0] !== null)
     .map(row => ({ number: row[0], name: row[1], memo: row[2] || '' }))
 }
 
@@ -387,7 +388,7 @@ function getAttendanceData(id) {
     memo: row[2] || '',
     statuses: row.slice(3),
     notes: noteRows[i].slice(3),
-  }))
+  })).filter(s => s.number !== '' && s.number !== null)
 
   const records = {}
   dates.forEach((date, colIdx) => {

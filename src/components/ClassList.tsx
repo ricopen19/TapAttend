@@ -19,10 +19,10 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
   const [newGradeClass, setNewGradeClass] = useState('')
   const [newSubject, setNewSubject] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editGradeClass, setEditGradeClass] = useState('')
   const [editSubject, setEditSubject] = useState('')
   const [busy, setBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
 
   const load = async () => {
     setLoadError(null)
@@ -54,13 +54,17 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
     }
   }
 
-  const updateClass = async (id: string) => {
-    const gradeClass = editGradeClass.trim()
+  const updateClass = async (c: SchoolClass) => {
     const subject = editSubject.trim()
-    if (!gradeClass || !subject) return
-    await api.renameClass(id, gradeClass, subject)
-    setEditingId(null)
-    load()
+    if (!subject) return
+    setEditError(null)
+    try {
+      await api.renameClass(c.id, c.gradeClass, subject)
+      setEditingId(null)
+      load()
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const deleteClass = async (id: string) => {
@@ -147,29 +151,27 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
         {classes?.map(c => (
           <li
             key={c.id}
-            className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 flex items-center gap-2"
+            className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
           >
             {editingId === c.id ? (
               <>
-                <input
-                  type="text"
-                  value={editGradeClass}
-                  onChange={e => setEditGradeClass(e.target.value)}
-                  className="w-24 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
-                  autoFocus
-                />
-                <input
-                  type="text"
-                  value={editSubject}
-                  onChange={e => setEditSubject(e.target.value)}
-                  onKeyDown={e => isSubmitEnter(e) && updateClass(c.id)}
-                  className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
-                />
-                <button onClick={() => updateClass(c.id)} className="text-blue-600 dark:text-blue-400 text-sm">保存</button>
-                <button onClick={() => setEditingId(null)} className="text-gray-400 text-sm">取消</button>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-sm text-gray-500 dark:text-gray-400">{c.gradeClass}</span>
+                  <input
+                    type="text"
+                    value={editSubject}
+                    onChange={e => setEditSubject(e.target.value)}
+                    onKeyDown={e => isSubmitEnter(e) && updateClass(c)}
+                    className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
+                    autoFocus
+                  />
+                  <button onClick={() => updateClass(c)} className="text-blue-600 dark:text-blue-400 text-sm">保存</button>
+                  <button onClick={() => { setEditingId(null); setEditError(null) }} className="text-gray-400 text-sm">取消</button>
+                </div>
+                {editError && <p className="text-red-500 text-xs mt-1">保存に失敗しました: {editError}</p>}
               </>
             ) : (
-              <>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => onSelectClass(c.id, displayName(c))}
                   className="flex-1 text-left font-medium"
@@ -183,7 +185,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   生徒
                 </button>
                 <button
-                  onClick={() => { setEditingId(c.id); setEditGradeClass(c.gradeClass); setEditSubject(c.subject) }}
+                  onClick={() => { setEditingId(c.id); setEditSubject(c.subject); setEditError(null) }}
                   className="text-gray-500 dark:text-gray-400 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded"
                 >
                   編集
@@ -194,7 +196,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                 >
                   削除
                 </button>
-              </>
+              </div>
             )}
           </li>
         ))}

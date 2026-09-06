@@ -164,17 +164,23 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
     return WEEKDAYS[d.getDay()]
   }
 
+  // input[type=date] の onBlur と Enter が両方発火するため、確定を1回に絞るガード。
+  // エディタを開くたび false に戻す。
+  const dateSubmitted = useRef(false)
+
   const updateLessonDate = async (oldDate: string, newDate: string) => {
-    if (busy || !newDate) return
+    if (!newDate || newDate === oldDate) { setEditingDate(null); return }
+    if (busy || dateSubmitted.current) return
+    dateSubmitted.current = true
     setBusy(true)
     flushEdits()
     try {
       setData(await api.updateLessonDate(classId, oldDate, newDate))
-      setEditingDate(null)
     } catch (e) {
       alert('日付の変更に失敗しました: ' + (e instanceof Error ? e.message : String(e)))
     } finally {
       setBusy(false)
+      setEditingDate(null)
     }
   }
 
@@ -308,7 +314,7 @@ export function AttendanceSheet({ classId, classNameLabel, isDark }: Props) {
                       ) : (
                         <div
                           className={`text-xs ${isLocked ? '' : 'cursor-pointer'}`}
-                          onClick={() => { if (!isLocked) setEditingDate(date) }}
+                          onClick={() => { if (!isLocked) { dateSubmitted.current = false; setEditingDate(date) } }}
                           title={isLocked ? undefined : 'クリックで日付修正'}
                         >
                           <div>{formatDate(date)}</div>
