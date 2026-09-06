@@ -11,6 +11,7 @@ export interface SchoolClass {
   id: string // GAS上のシート名
   gradeClass: string // 学年組（名簿マスタのシート名と一致）
   subject: string // 教科名
+  teacher: string // 担当教員名（空文字＝未設定）
   sortOrder: number
   createdAt: string
 }

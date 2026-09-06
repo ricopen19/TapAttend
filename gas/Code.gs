@@ -4,7 +4,7 @@
 // - 名簿マスタ（学年ごとに別スプレッドシート、IDは「設定」タブで管理）: 学年組と同名タブ。
 //   3行目ヘッダー、4行目以降がデータ。A列=出席番号、C列=氏名。読み取り専用。
 // - 出欠データ（ATTENDANCE_SPREADSHEET_ID）: 初回アクセス時に自動作成。司令塔となる索引ファイル。
-//   - 「クラス一覧」タブ: 学年組, 教科名, 組スプレッドシートID, タブ名, 表示順, 作成日時
+//   - 「クラス一覧」タブ: 学年組, 教科名, 組スプレッドシートID, タブ名, 表示順, 作成日時, 担当教員
 //   - 「設定」タブ: 学年, スプレッドシートID（名簿マスタの参照先。年度更新時はここを書き換える）
 // - 組ごとの出欠データ（`${年度}_${学年組}_出欠席データ`、ATTENDANCE_FOLDER_NAME フォルダ配下に自動作成）:
 //   その学年組で開講している教科ごとに1タブ。A列=出席番号, B列=氏名, C列=メモ,
@@ -116,7 +116,7 @@ function getAttendanceSs_() {
   props.setProperty('ATTENDANCE_SPREADSHEET_ID', ss.getId())
   const sheet = ss.getSheets()[0]
   sheet.setName(CLASS_LIST_SHEET)
-  sheet.getRange(1, 1, 1, 6).setValues([['学年組', '教科名', '組スプレッドシートID', 'タブ名', '表示順', '作成日時']])
+  sheet.getRange(1, 1, 1, 7).setValues([['学年組', '教科名', '組スプレッドシートID', 'タブ名', '表示順', '作成日時', '担当教員']])
   attendanceSs_ = ss
   getSettingsSheet_()
   return ss
@@ -214,21 +214,24 @@ function listClasses() {
   const sheet = ss.getSheetByName(CLASS_LIST_SHEET)
   const lastRow = sheet.getLastRow()
   if (lastRow < 2) return []
-  const values = sheet.getRange(2, 1, lastRow - 1, 6).getValues()
+  const values = sheet.getRange(2, 1, lastRow - 1, 7).getValues()
   return values
     .filter(row => row[2] && row[3])
     .map(row => ({
       id: encodeClassId_(row[2], row[3]),
       gradeClass: row[0],
       subject: row[1],
+      teacher: row[6] || '',
       sortOrder: row[4],
       createdAt: row[5],
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
-function createClass(gradeClass, subject) {
+function createClass(gradeClass, subject, teacher) {
   return withLock_(() => {
+    const teacherName = String(teacher || '').trim()
+
     // 名簿が引けないなら、クラス一覧・クラスシートを作る前に失敗させる（壊れたクラスを残さない）
     const roster = getRoster(gradeClass)
 
@@ -246,7 +249,7 @@ function createClass(gradeClass, subject) {
     const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)
     const createdAt = new Date().toISOString()
     const sortOrder = classes.length > 0 ? Math.max(...classes.map(c => c.sortOrder)) + 1 : 0
-    listSheet.appendRow([gradeClass, subject, groupSsId, tabName, sortOrder, createdAt])
+    listSheet.appendRow([gradeClass, subject, groupSsId, tabName, sortOrder, createdAt, teacherName])
 
     const classSheet = isNew ? groupSs.getSheets()[0].setName(tabName) : groupSs.insertSheet(tabName)
     classSheet.getRange(1, 1, 1, 3).setValues([['番号', '氏名', 'メモ']])
@@ -254,7 +257,7 @@ function createClass(gradeClass, subject) {
       classSheet.getRange(2, 1, roster.length, 3).setValues(roster.map(s => [s.number, s.name, '']))
     }
 
-    return { id: encodeClassId_(groupSsId, tabName), gradeClass, subject, sortOrder, createdAt }
+    return { id: encodeClassId_(groupSsId, tabName), gradeClass, subject, teacher: teacherName, sortOrder, createdAt }
   })
 }
 
@@ -270,8 +273,8 @@ function findClassRow_(id) {
   return null
 }
 
-// 学年組の変更は非対応（別ファイルへの移動が必要になるため）。教科名のみ変更できる。
-function renameClass(id, gradeClass, subject) {
+// 学年組の変更は非対応（別ファイルへの移動が必要になるため）。教科名と担当教員を変更できる。
+function renameClass(id, gradeClass, subject, teacher) {
   withLock_(() => {
     const current = getClassInfo_(id)
     if (current.gradeClass !== gradeClass) {
@@ -280,6 +283,7 @@ function renameClass(id, gradeClass, subject) {
     const row = findClassRow_(id)
     if (!row) throw new Error('クラスが見つかりません: ' + id)
     row.listSheet.getRange(row.rowIndex, 2).setValue(subject)
+    row.listSheet.getRange(row.rowIndex, 7).setValue(String(teacher || '').trim())
   })
 }
 

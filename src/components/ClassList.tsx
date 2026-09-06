@@ -18,8 +18,10 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [newGradeClass, setNewGradeClass] = useState('')
   const [newSubject, setNewSubject] = useState('')
+  const [newTeacher, setNewTeacher] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editSubject, setEditSubject] = useState('')
+  const [editTeacher, setEditTeacher] = useState('')
   const [busy, setBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
@@ -43,9 +45,10 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
     setBusy(true)
     setAddError(null)
     try {
-      await api.createClass(gradeClass, subject)
+      await api.createClass(gradeClass, subject, newTeacher.trim())
       setNewGradeClass('')
       setNewSubject('')
+      setNewTeacher('')
       await load()
     } catch (e) {
       setAddError(e instanceof Error ? e.message : String(e))
@@ -59,7 +62,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
     if (!subject) return
     setEditError(null)
     try {
-      await api.renameClass(c.id, c.gradeClass, subject)
+      await api.renameClass(c.id, c.gradeClass, subject, editTeacher.trim())
       setEditingId(null)
       load()
     } catch (e) {
@@ -124,6 +127,16 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
         </button>
       </div>
 
+      <input
+        type="text"
+        value={newTeacher}
+        onChange={e => setNewTeacher(e.target.value)}
+        onKeyDown={e => isSubmitEnter(e) && addClass()}
+        placeholder="担当教員（任意）"
+        disabled={busy}
+        className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm mb-2 disabled:opacity-40"
+      />
+
       {addError && (
         <p className="text-red-500 text-xs mb-4">追加に失敗しました: {addError}</p>
       )}
@@ -155,7 +168,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
           >
             {editingId === c.id ? (
               <>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="w-24 shrink-0 text-sm text-gray-500 dark:text-gray-400">{c.gradeClass}</span>
                   <input
                     type="text"
@@ -167,6 +180,14 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   />
                   <button onClick={() => updateClass(c)} className="text-blue-600 dark:text-blue-400 text-sm">保存</button>
                   <button onClick={() => { setEditingId(null); setEditError(null) }} className="text-gray-400 text-sm">取消</button>
+                  <input
+                    type="text"
+                    value={editTeacher}
+                    onChange={e => setEditTeacher(e.target.value)}
+                    onKeyDown={e => isSubmitEnter(e) && updateClass(c)}
+                    placeholder="担当教員（任意）"
+                    className="basis-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 text-sm"
+                  />
                 </div>
                 {editError && <p className="text-red-500 text-xs mt-1">保存に失敗しました: {editError}</p>}
               </>
@@ -177,6 +198,9 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   className="flex-1 text-left font-medium"
                 >
                   {displayName(c)}
+                  {c.teacher && (
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">{c.teacher}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => onManageStudents(c.id, displayName(c))}
@@ -185,7 +209,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   生徒
                 </button>
                 <button
-                  onClick={() => { setEditingId(c.id); setEditSubject(c.subject); setEditError(null) }}
+                  onClick={() => { setEditingId(c.id); setEditSubject(c.subject); setEditTeacher(c.teacher); setEditError(null) }}
                   className="text-gray-500 dark:text-gray-400 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded"
                 >
                   編集

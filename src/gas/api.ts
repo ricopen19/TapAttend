@@ -42,8 +42,10 @@ function run<T>(functionName: string, ...args: unknown[]): Promise<T> {
 
 export const api = {
   listClasses: () => run<SchoolClass[]>('listClasses'),
-  createClass: (gradeClass: string, subject: string) => run<SchoolClass>('createClass', gradeClass, subject),
-  renameClass: (id: string, gradeClass: string, subject: string) => run<void>('renameClass', id, gradeClass, subject),
+  createClass: (gradeClass: string, subject: string, teacher: string) =>
+    run<SchoolClass>('createClass', gradeClass, subject, teacher),
+  renameClass: (id: string, gradeClass: string, subject: string, teacher: string) =>
+    run<void>('renameClass', id, gradeClass, subject, teacher),
   deleteClass: (id: string) => run<void>('deleteClass', id),
   getStudents: (id: string) => run<Student[]>('getStudents', id),
   syncRoster: (id: string) => run<Student[]>('syncRoster', id),
