@@ -109,11 +109,24 @@ function getAttendanceSs_() {
   let id = props.getProperty('ATTENDANCE_SPREADSHEET_ID')
   if (id) {
     attendanceSs_ = SpreadsheetApp.openById(id)
+    // 司令塔ファイルをフォルダ配下へ移す機能より前に作られたデプロイの自己修復。
+    // フラグで1回だけ実行し、以降はプロパティ読み取り1回で素通りする。
+    // 共有は付随機能なので、Drive側の一時失敗で本体の読み書きを止めない（次回再試行）。
+    if (!props.getProperty('ATTENDANCE_SS_IN_FOLDER')) {
+      try {
+        moveIntoAttendanceFolder_(id)
+        props.setProperty('ATTENDANCE_SS_IN_FOLDER', '1')
+      } catch (e) {
+        console.error('司令塔ファイルのフォルダ移動に失敗（次回再試行）: ' + e)
+      }
+    }
     return attendanceSs_
   }
 
   const ss = SpreadsheetApp.create('TapAttend出欠データ')
   props.setProperty('ATTENDANCE_SPREADSHEET_ID', ss.getId())
+  moveIntoAttendanceFolder_(ss.getId())
+  props.setProperty('ATTENDANCE_SS_IN_FOLDER', '1')
   const sheet = ss.getSheets()[0]
   sheet.setName(CLASS_LIST_SHEET)
   sheet.getRange(1, 1, 1, 7).setValues([['学年組', '教科名', '組スプレッドシートID', 'タブ名', '表示順', '作成日時', '担当教員']])
@@ -138,6 +151,15 @@ function getAttendanceFolder_() {
   props.setProperty('ATTENDANCE_FOLDER_ID', folder.getId())
   attendanceFolder_ = folder
   return attendanceFolder_
+}
+
+// SpreadsheetApp.create はルート直下にファイルを作る。教員への共有はこのフォルダを
+// 「閲覧者」で1回共有するだけで済むよう（配下のファイルは共有設定を継承する）、
+// 作成したスプレッドシートは必ずフォルダ配下へ移動する。編集はWebアプリ経由のみ。
+function moveIntoAttendanceFolder_(fileId) {
+  const file = DriveApp.getFileById(fileId)
+  getAttendanceFolder_().addFile(file)
+  DriveApp.getRootFolder().removeFile(file)
 }
 
 // 学校年度（4月始まり）。1〜3月は前年度扱い。
@@ -189,10 +211,7 @@ function getOrCreateGroupSpreadsheet_(gradeClass) {
 
   const name = `${fiscalYear_()}_${gradeClass}_出欠席データ`
   const ss = SpreadsheetApp.create(name)
-  const file = DriveApp.getFileById(ss.getId())
-  const folder = getAttendanceFolder_()
-  folder.addFile(file)
-  DriveApp.getRootFolder().removeFile(file)
+  moveIntoAttendanceFolder_(ss.getId())
   groupSsCache_[ss.getId()] = ss
   return { id: ss.getId(), ss, isNew: true }
 }
