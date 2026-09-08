@@ -467,11 +467,13 @@ function updateLessonDate(id, oldDate, newDate) {
 }
 
 // edits: [{ number, date, status, note }]
+// 戻り値なし: クライアントは楽観的更新済みで、保存後のフル再取得は使っていない。
+// 末尾の getAttendanceData（全セル getValues + getNotes）を省くとホットパスの最大コストが消える。
 function saveAttendanceEdits(id, edits) {
-  return withLock_(() => {
+  withLock_(() => {
     const { sheet, header } = getClassSheetAndHeader_(id)
     const lastRow = sheet.getLastRow()
-    if (lastRow < 2) return getAttendanceData(id)
+    if (lastRow < 2) return
     const numbers = sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => r[0])
     const dateCols = dateColumns_(header)
 
@@ -483,7 +485,5 @@ function saveAttendanceEdits(id, edits) {
       range.setValue(STATUS_TO_SYMBOL[edit.status] || '')
       range.setNote(edit.note || '')
     })
-
-    return getAttendanceData(id)
   })
 }

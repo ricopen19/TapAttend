@@ -6,16 +6,25 @@ interface Props {
   classId: string
 }
 
+// ponytail: AttendanceSheet の attendanceCache と同じ SWR 的キャッシュ。生徒管理へ入り直す
+// たびの再ロード待ちをなくす。タブを開いている間だけ（リロードで消える）。名簿再取り込み・
+// メモ編集でも中身が変わるので、students を書き換えるところは同時にこのキャッシュも更新する。
+const studentsCache = new Map<string, Student[]>()
+
 export function StudentManager({ classId }: Props) {
-  const [students, setStudents] = useState<Student[] | null>(null)
+  const [students, setStudents] = useState<Student[] | null>(() => studentsCache.get(classId) ?? null)
   const [expandedNumber, setExpandedNumber] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
 
+  // students を書き換える3箇所（初回取得・名簿再取り込み・メモ編集）はキャッシュも一緒に更新する。
+  // useEffect(load) の依存を classId だけに保つため、共通ヘルパにはせず各所でインラインに書く。
   const load = () => {
     setLoadError(null)
-    setStudents(null)
-    api.getStudents(classId).then(setStudents).catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
+    setStudents(studentsCache.get(classId) ?? null)
+    api.getStudents(classId)
+      .then(s => { studentsCache.set(classId, s); setStudents(s) })
+      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
   }
 
   useEffect(load, [classId])
@@ -24,7 +33,9 @@ export function StudentManager({ classId }: Props) {
     if (syncing) return
     setSyncing(true)
     try {
-      setStudents(await api.syncRoster(classId))
+      const s = await api.syncRoster(classId)
+      studentsCache.set(classId, s)
+      setStudents(s)
     } catch (e) {
       alert('名簿の再取り込みに失敗しました: ' + (e instanceof Error ? e.message : String(e)))
     } finally {
@@ -33,7 +44,11 @@ export function StudentManager({ classId }: Props) {
   }
 
   const updateMemoLocal = (number: number, memo: string) => {
-    setStudents(prev => prev && prev.map(s => s.number === number ? { ...s, memo } : s))
+    setStudents(prev => {
+      const next = prev && prev.map(s => s.number === number ? { ...s, memo } : s)
+      if (next) studentsCache.set(classId, next)
+      return next
+    })
   }
 
   const saveMemo = (number: number, memo: string) => {

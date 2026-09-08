@@ -13,8 +13,13 @@ const displayName = (c: SchoolClass) => `${c.gradeClass} ${c.subject}`
 const isSubmitEnter = (e: KeyboardEvent) =>
   e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229
 
+// ponytail: AttendanceSheet の attendanceCache と同じ SWR 的キャッシュ。トップへ戻るたびの
+// 再ロード待ちをなくす。タブを開いている間だけ（リロードで消える）。追加・改名・削除は
+// load() 経由でこのキャッシュも更新される。
+let classListCache: SchoolClass[] | null = null
+
 export function ClassList({ onSelectClass, onManageStudents }: Props) {
-  const [classes, setClasses] = useState<SchoolClass[] | null>(null)
+  const [classes, setClasses] = useState<SchoolClass[] | null>(() => classListCache)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [newGradeClass, setNewGradeClass] = useState('')
   const [newSubject, setNewSubject] = useState('')
@@ -29,7 +34,8 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
   const load = async () => {
     setLoadError(null)
     try {
-      setClasses(await api.listClasses())
+      classListCache = await api.listClasses()
+      setClasses(classListCache)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }

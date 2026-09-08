@@ -56,5 +56,5 @@ export const api = {
   updateLessonDate: (id: string, oldDate: string, newDate: string) =>
     run<AttendanceData>('updateLessonDate', id, oldDate, newDate),
   saveAttendanceEdits: (id: string, edits: AttendanceEdit[]) =>
-    run<AttendanceData>('saveAttendanceEdits', id, edits),
+    run<void>('saveAttendanceEdits', id, edits),
 }
