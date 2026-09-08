@@ -3,7 +3,9 @@
 // スプレッドシート構成:
 // - 名簿マスタ（学年ごとに別スプレッドシート、IDは「設定」タブで管理）: 学年組と同名タブ。
 //   3行目ヘッダー、4行目以降がデータ。A列=出席番号、C列=氏名。読み取り専用。
-// - 出欠データ（ATTENDANCE_SPREADSHEET_ID）: 初回アクセス時に自動作成。司令塔となる索引ファイル。
+// - 司令塔スプレッドシート（ATTENDANCE_SPREADSHEET_ID）: 初回アクセス時に「TapAttend出欠データ」の
+//   名前で自動作成される索引ファイル。作成後にリネームしてよく、本番では「TapAttend設定シート」に
+//   改名済み（コードはIDで開くのでファイル名には依存しない）。ATTENDANCE_FOLDER_NAME のフォルダとは別物。
 //   - 「クラス一覧」タブ: 学年組, 教科名, 組スプレッドシートID, タブ名, 表示順, 作成日時, 担当教員
 //   - 「設定」タブ: 学年, スプレッドシートID（名簿マスタの参照先。年度更新時はここを書き換える）
 // - 組ごとの出欠データ（`${年度}_${学年組}_出欠席データ`、ATTENDANCE_FOLDER_NAME フォルダ配下に自動作成）:
@@ -16,7 +18,7 @@
 // クラスの id はクライアントに対しては `${組スプレッドシートID}:${タブ名}` という不透明な文字列として渡す。
 // 学年組のリネームは非対応（別ファイルへの移動が必要になるため）。クラスを削除して作り直してもらう。
 //
-// 初回セットアップ: 出欠データスプレッドシートの「設定」タブに学年とスプレッドシートIDを入力する。
+// 初回セットアップ: 司令塔スプレッドシート（TapAttend設定シート）の「設定」タブに学年とスプレッドシートIDを入力する。
 
 const CLASS_LIST_SHEET = 'クラス一覧'
 const SETTINGS_SHEET = '設定'
@@ -67,7 +69,7 @@ function gradeOf_(gradeClass) {
   return m[0]
 }
 
-// 学年ごとの名簿マスタIDは出欠データスプレッドシートの「設定」タブ（学年, スプレッドシートID）で管理する。
+// 学年ごとの名簿マスタIDは司令塔スプレッドシート（TapAttend設定シート）の「設定」タブ（学年, スプレッドシートID）で管理する。
 // 年度更新時はGASエディタを触らず、このタブのセルを書き換えるだけでよい。
 function getSettingsSheet_() {
   const ss = getAttendanceSs_()
@@ -123,6 +125,7 @@ function getAttendanceSs_() {
     return attendanceSs_
   }
 
+  // 自動生成時の名前。作成後は ID で開くので、運用側でリネームしてよい（本番は「TapAttend設定シート」）。
   const ss = SpreadsheetApp.create('TapAttend出欠データ')
   props.setProperty('ATTENDANCE_SPREADSHEET_ID', ss.getId())
   moveIntoAttendanceFolder_(ss.getId())
