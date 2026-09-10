@@ -166,7 +166,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-gray-500 dark:text-gray-400">
-              担当教員を登録すると自分の担当クラスだけ表示されます
+              クラス/教科登録時に担当を追加すると担当者名で絞り込み表示ができます
             </span>
             {teacherOptions.length > 0 ? (
               <select
@@ -301,6 +301,14 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   />
                 </div>
                 {editError && <p className="text-red-500 text-xs mt-1">保存に失敗しました: {editError}</p>}
+                <div className="mt-2 flex">
+                  <button
+                    onClick={() => deleteClass(c.id)}
+                    className="ml-auto text-red-500 dark:text-red-400 text-xs px-2 py-1 border border-red-300 dark:border-red-800 rounded"
+                  >
+                    このクラスを削除
+                  </button>
+                </div>
               </>
             ) : (
               <div className="flex items-center gap-2">
@@ -326,12 +334,6 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   className="text-gray-500 dark:text-gray-400 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded"
                 >
                   編集
-                </button>
-                <button
-                  onClick={() => deleteClass(c.id)}
-                  className="text-red-500 dark:text-red-400 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded"
-                >
-                  削除
                 </button>
               </div>
             )}
