@@ -31,6 +31,17 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
   const [addError, setAddError] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // 担当フィルタ（T34, docs/spec.md）: 端末ローカルのみ。認証はせず、名前の完全一致で一覧を畳む。
+  const [teacherName, setTeacherName] = useState(() => localStorage.getItem('tapattend-teacher') || '')
+  const [classFilter, setClassFilter] = useState<'mine' | 'all'>(
+    () => (localStorage.getItem('tapattend-class-filter') === 'all' ? 'all' : 'mine'),
+  )
+  useEffect(() => {
+    if (teacherName) localStorage.setItem('tapattend-teacher', teacherName)
+    else localStorage.removeItem('tapattend-teacher')
+  }, [teacherName])
+  useEffect(() => { localStorage.setItem('tapattend-class-filter', classFilter) }, [classFilter])
+
   const load = async () => {
     setLoadError(null)
     try {
@@ -103,8 +114,85 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
     }
   }
 
+  const registered = teacherName.trim() !== ''
+  // 候補 = 今あるクラスの teacher ユニーク値 ∪ 登録名。候補ゼロ（クラス未作成）のときだけ自由記入にする。
+  const teacherOptions = Array.from(
+    new Set(
+      [...(classes ?? []).map(c => c.teacher.trim()), teacherName.trim()].filter(Boolean),
+    ),
+  ).sort()
+  const matchesTeacher = (c: SchoolClass) => {
+    const t = c.teacher.trim()
+    return t === '' || t === teacherName.trim() // teacher 未設定は常に表示（入力漏れで点呼不能を防ぐ）
+  }
+  const visibleClasses =
+    classes == null || !registered || classFilter === 'all' ? classes : classes.filter(matchesTeacher)
+  const noMatch =
+    registered && classFilter === 'mine' && classes != null && classes.length > 0 && visibleClasses?.length === 0
+
   return (
     <div className="p-4 max-w-lg mx-auto">
+      {/* 担当フィルタ（T34） */}
+      <div className="mb-3 text-sm">
+        {registered ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-gray-500 dark:text-gray-400">担当:</span>
+            <select
+              value={teacherName.trim()}
+              onChange={e => setTeacherName(e.target.value)}
+              className="border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1"
+            >
+              {teacherOptions.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={() => setTeacherName('')} className="text-xs text-gray-500 dark:text-gray-400 underline">
+              登録解除
+            </button>
+            <div className="ml-auto flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
+              {(['mine', 'all'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setClassFilter(f)}
+                  className={`px-2 py-1 text-xs ${
+                    classFilter === f ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  {f === 'mine' ? '担当のみ' : 'すべて'}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-gray-500 dark:text-gray-400">
+              担当教員を登録すると自分の担当クラスだけ表示されます
+            </span>
+            {teacherOptions.length > 0 ? (
+              <select
+                value=""
+                onChange={e => e.target.value && setTeacherName(e.target.value)}
+                className="border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1"
+              >
+                <option value="">教員を選択</option>
+                {teacherOptions.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            ) : (
+              <input
+                type="text"
+                placeholder="担当教員名"
+                onKeyDown={e => { if (isSubmitEnter(e)) setTeacherName(e.currentTarget.value.trim()) }}
+                onBlur={e => setTeacherName(e.target.value.trim())}
+                className="border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1"
+              />
+            )}
+          </div>
+        )}
+        {registered && classFilter === 'mine' && (
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {teacherName} さんの担当クラスのみ表示中
+          </p>
+        )}
+      </div>
+
       <div className="flex gap-2 mb-2">
         <input
           type="text"
@@ -166,8 +254,17 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
         </p>
       )}
 
+      {noMatch && (
+        <p className="text-gray-400 text-center py-8">
+          「{teacherName}」さんの担当クラスがありません。
+          <button onClick={() => setClassFilter('all')} className="text-blue-600 dark:text-blue-400 ml-1">
+            すべて表示
+          </button>
+        </p>
+      )}
+
       <ul className="space-y-2">
-        {classes?.map(c => (
+        {visibleClasses?.map(c => (
           <li
             key={c.id}
             className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
@@ -204,8 +301,10 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                   className="flex-1 text-left font-medium"
                 >
                   {displayName(c)}
-                  {c.teacher && (
+                  {c.teacher ? (
                     <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">{c.teacher}</span>
+                  ) : (
+                    <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">担当未設定</span>
                   )}
                 </button>
                 <button
