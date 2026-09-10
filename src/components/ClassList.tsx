@@ -136,7 +136,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
       <div className="mb-3 text-sm">
         {registered ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-gray-500 dark:text-gray-400">担当:</span>
+            <span className="text-gray-500 dark:text-gray-400">絞り込み:</span>
             <select
               value={teacherName.trim()}
               onChange={e => setTeacherName(e.target.value)}
@@ -144,7 +144,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
             >
               {teacherOptions.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <button onClick={() => setTeacherName('')} className="text-xs text-gray-500 dark:text-gray-400 underline">
+            <button onClick={() => setTeacherName('')} className="text-xs text-gray-400">
               登録解除
             </button>
             <div className="ml-auto flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
@@ -152,6 +152,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
                 <button
                   key={f}
                   onClick={() => setClassFilter(f)}
+                  aria-pressed={classFilter === f}
                   className={`px-2 py-1 text-xs ${
                     classFilter === f ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300'
                   }`}
@@ -186,50 +187,45 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
             )}
           </div>
         )}
-        {registered && classFilter === 'mine' && (
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {teacherName} さんの担当クラスのみ表示中
-          </p>
-        )}
       </div>
 
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">クラスを追加</p>
+      <input
+        type="text"
+        value={newGradeClass}
+        onChange={e => setNewGradeClass(e.target.value)}
+        onKeyDown={e => isSubmitEnter(e) && addClass()}
+        placeholder="学年組（例：1 - 1、名簿シート名と一致）"
+        disabled={busy}
+        className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm mb-2 disabled:opacity-40"
+      />
       <div className="flex gap-2 mb-2">
-        <input
-          type="text"
-          value={newGradeClass}
-          onChange={e => setNewGradeClass(e.target.value)}
-          onKeyDown={e => isSubmitEnter(e) && addClass()}
-          placeholder="学年組（例：1 - 1、名簿シート名と一致）"
-          disabled={busy}
-          className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm disabled:opacity-40"
-        />
         <input
           type="text"
           value={newSubject}
           onChange={e => setNewSubject(e.target.value)}
           onKeyDown={e => isSubmitEnter(e) && addClass()}
-          placeholder="教科名（例：数学I）"
+          placeholder="教科名（数学I）"
           disabled={busy}
-          className="w-28 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
+          className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
+        />
+        <input
+          type="text"
+          value={newTeacher}
+          onChange={e => setNewTeacher(e.target.value)}
+          onKeyDown={e => isSubmitEnter(e) && addClass()}
+          placeholder="担当（任意）"
+          disabled={busy}
+          className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
         />
         <button
           onClick={addClass}
           disabled={busy}
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
+          className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
         >
           {busy ? '追加中...' : '追加'}
         </button>
       </div>
-
-      <input
-        type="text"
-        value={newTeacher}
-        onChange={e => setNewTeacher(e.target.value)}
-        onKeyDown={e => isSubmitEnter(e) && addClass()}
-        placeholder="担当教員（任意）"
-        disabled={busy}
-        className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm mb-2 disabled:opacity-40"
-      />
 
       {addError && (
         <p className="text-red-500 text-xs mb-4">追加に失敗しました: {addError}</p>
