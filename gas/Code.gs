@@ -9,7 +9,8 @@
 //   - 「クラス一覧」タブ: 学年組, 教科名, 組スプレッドシートID, タブ名, 表示順, 作成日時, 担当教員
 //   - 「設定」タブ: 学年, スプレッドシートID（名簿マスタの参照先。年度更新時はここを書き換える）
 // - 組ごとの出欠データ（`${年度}_${学年組}_出欠席データ`、ATTENDANCE_FOLDER_NAME フォルダ配下に自動作成）:
-//   その学年組で開講している教科ごとに1タブ。A列=出席番号, B列=氏名, C列=メモ,
+//   その学年組で開講している教科ごとに1タブ。タブ名は 教科名_担当者名（担当者が空なら教科名のみ）。
+//   A列=出席番号, B列=氏名, C列=メモ,
 //   D列以降=授業日（ヘッダーが日付文字列）。セルの値=出欠記号、セルのノート=その日の備考。
 //   番号・氏名はクラス作成時に名簿マスタからコピーされる。以後は自動同期せず、
 //   「名簿を再取り込み」操作（syncRoster）を呼んだときだけ名簿マスタを参照する。
@@ -263,9 +264,10 @@ function createClass(gradeClass, subject, teacher) {
     }
 
     const { ss: groupSs, id: groupSsId, isNew } = getOrCreateGroupSpreadsheet_(gradeClass)
-    const tabName = sanitizeSheetName_(subject)
+    // タブ名は 教科名_担当者名（担当者が空なら教科名のみ）。id はこのタブ名から生成され rename では変わらない。
+    const tabName = sanitizeSheetName_(teacherName ? `${subject}_${teacherName}` : subject)
     if (groupSs.getSheetByName(tabName)) {
-      throw new Error(`${gradeClass} に ${subject} のタブが既に存在します。`)
+      throw new Error(`${gradeClass} に「${tabName}」のタブが既に存在します。`)
     }
 
     const listSheet = getAttendanceSs_().getSheetByName(CLASS_LIST_SHEET)

@@ -21,6 +21,7 @@ let classListCache: SchoolClass[] | null = null
 export function ClassList({ onSelectClass, onManageStudents }: Props) {
   const [classes, setClasses] = useState<SchoolClass[] | null>(() => classListCache)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
   const [newGradeClass, setNewGradeClass] = useState('')
   const [newSubject, setNewSubject] = useState('')
   const [newTeacher, setNewTeacher] = useState('')
@@ -189,47 +190,58 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
         )}
       </div>
 
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">クラスを追加</p>
-      <input
-        type="text"
-        value={newGradeClass}
-        onChange={e => setNewGradeClass(e.target.value)}
-        onKeyDown={e => isSubmitEnter(e) && addClass()}
-        placeholder="学年組（例：1 - 1、名簿シート名と一致）"
-        disabled={busy}
-        className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm mb-2 disabled:opacity-40"
-      />
-      <div className="flex gap-2 mb-2">
-        <input
-          type="text"
-          value={newSubject}
-          onChange={e => setNewSubject(e.target.value)}
-          onKeyDown={e => isSubmitEnter(e) && addClass()}
-          placeholder="教科名（数学I）"
-          disabled={busy}
-          className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
-        />
-        <input
-          type="text"
-          value={newTeacher}
-          onChange={e => setNewTeacher(e.target.value)}
-          onKeyDown={e => isSubmitEnter(e) && addClass()}
-          placeholder="担当（任意）"
-          disabled={busy}
-          className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
-        />
-        <button
-          onClick={addClass}
-          disabled={busy}
-          className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
-        >
-          {busy ? '追加中...' : '追加'}
-        </button>
-      </div>
+      <button
+        onClick={() => setShowAddForm(v => !v)}
+        className="text-sm text-blue-600 dark:text-blue-400 mb-2"
+      >
+        {showAddForm ? '× 閉じる' : '＋ クラスを追加'}
+      </button>
 
-      {addError && (
-        <p className="text-red-500 text-xs mb-4">追加に失敗しました: {addError}</p>
+      {showAddForm && (
+        <>
+          <input
+            type="text"
+            value={newGradeClass}
+            onChange={e => setNewGradeClass(e.target.value)}
+            onKeyDown={e => isSubmitEnter(e) && addClass()}
+            placeholder="学年組（例：1 - 1、名簿シート名と一致）"
+            disabled={busy}
+            className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-3 py-2 text-sm mb-2 disabled:opacity-40"
+          />
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={newSubject}
+              onChange={e => setNewSubject(e.target.value)}
+              onKeyDown={e => isSubmitEnter(e) && addClass()}
+              placeholder="教科名（数学I）"
+              disabled={busy}
+              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
+            />
+            <input
+              type="text"
+              value={newTeacher}
+              onChange={e => setNewTeacher(e.target.value)}
+              onKeyDown={e => isSubmitEnter(e) && addClass()}
+              placeholder="担当（任意）"
+              disabled={busy}
+              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-2 text-sm disabled:opacity-40"
+            />
+            <button
+              onClick={addClass}
+              disabled={busy}
+              className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
+            >
+              {busy ? '追加中...' : '追加'}
+            </button>
+          </div>
+          {addError && (
+            <p className="text-red-500 text-xs mb-4">追加に失敗しました: {addError}</p>
+          )}
+        </>
       )}
+
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1 mt-3">クラス/教科一覧</p>
 
       {loadError && (
         <div className="text-center py-8">
@@ -246,7 +258,7 @@ export function ClassList({ onSelectClass, onManageStudents }: Props) {
 
       {!loadError && classes?.length === 0 && (
         <p className="text-gray-400 text-center py-8">
-          クラスがありません。上のフォームから追加してください。
+          クラスがありません。「＋ クラスを追加」から登録してください。
         </p>
       )}
 
